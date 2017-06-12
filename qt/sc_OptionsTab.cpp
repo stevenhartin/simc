@@ -275,6 +275,15 @@ SC_OptionsTab::SC_OptionsTab( SC_MainWindow* parent ) :
   createToolTips();
 }
 
+void SC_OptionsTab::_armoryRegionChanged( const QString& region )
+{
+  auto region_index = choice.armory_region -> findData( region.toUpper(), Qt::DisplayRole );
+  if ( region_index != -1 )
+  {
+    choice.armory_region -> setCurrentIndex( region_index );
+  }
+}
+
 void SC_OptionsTab::createGlobalsTab()
 {
   // Create left side global options
@@ -292,11 +301,11 @@ void SC_OptionsTab::createGlobalsTab()
   globalsLayout_left -> addRow(        tr( "Version" ),        choice.version = createChoice( 1, "Live" ) );
 #endif
 #endif
-  globalsLayout_left -> addRow( tr(  "Target Error" ),    choice.target_error = createChoice( 8, "N/A", "Auto", "1%", "0.5%", "0.1%", "0.05%", "0.03%", "0.01%" ) );
-  globalsLayout_left -> addRow( tr(    "Iterations" ),      choice.iterations = addValidatorToComboBox( 1, INT_MAX, createChoice( 8, "1", "100", "1000", "10000", "25000", "50000", "100000", "250000" ) ) );
-  globalsLayout_left -> addRow( tr(  "Length (sec)" ),    choice.fight_length = addValidatorToComboBox( 1, 1000, createChoice( 10, "100", "150", "200", "250", "300", "350", "400", "450", "500", "600" ) ) );
+  globalsLayout_left -> addRow( tr(  "Target Error" ),    choice.target_error = createChoice( 9, "N/A", "Auto", "1%", "0.5%", "0.3%", "0.1%", "0.05%", "0.03%", "0.01%" ) );
+  globalsLayout_left -> addRow( tr(    "Iterations" ),      choice.iterations = addValidatorToComboBox( 1, INT_MAX, createChoice( 9, "1", "100", "1000", "10000", "25000", "50000", "100000", "250000", "500000" ) ) );
+  globalsLayout_left -> addRow( tr(  "Length (sec)" ),    choice.fight_length = addValidatorToComboBox( 1, 10000, createChoice( 10, "100", "150", "200", "250", "300", "350", "400", "450", "500", "600" ) ) );
   globalsLayout_left -> addRow( tr(   "Vary Length %" ),  choice.fight_variance = addValidatorToComboBox( 0, 100, createChoice( 6, "0", "10", "20", "30", "40", "50" ) ) );
-  globalsLayout_left -> addRow( tr(   "Fight Style" ),     choice.fight_style = createChoice( 7, "Patchwerk", "HecticAddCleave", "HelterSkelter", "Ultraxion", "LightMovement", "HeavyMovement", "Beastlord" ) );
+  globalsLayout_left -> addRow( tr(   "Fight Style" ),     choice.fight_style = createChoice( 8, "Patchwerk", "HecticAddCleave", "HelterSkelter", "Ultraxion", "LightMovement", "HeavyMovement", "Beastlord", "CastingPatchwerk" ) );
   globalsLayout_left -> addRow( tr( "Challenge Mode" ), choice.challenge_mode = createChoice( 2, "Disabled", "Enabled" ) );
   globalsLayout_left -> addRow( tr(  "Player Skill" ),    choice.player_skill = createChoice( 4, "Elite", "Good", "Average", "Ouch! Fire is hot!" ) );
   globalsLayout_left -> addRow( tr( "Default Role" ),     choice.default_role = createChoice( 4, "Auto", "DPS", "Heal", "Tank" ) );
@@ -342,6 +351,14 @@ void SC_OptionsTab::createGlobalsTab()
   globalsLayout_right -> addRow( tr( "Statistics Level" ),   choice.statistics_level = createChoice( 4, "0", "1", "2", "3" ) );
   globalsLayout_right -> addRow( tr( "Deterministic RNG" ), choice.deterministic_rng = createChoice( 2, "Yes", "No" ) );
   globalsLayout_right -> addRow( tr( "Auto-Save Reports" ), choice.auto_save = createChoice( 3, "No", "Use current date/time", "Ask for filename on each simulation" ) );
+
+  QPushButton* savelocation = new QPushButton( tr( "Change default location for reports." ), this );
+  QFont override_font2 = QFont();
+  override_font2.setPixelSize( 14 );
+  resetb -> setFont( override_font2 );
+
+  connect( savelocation, SIGNAL( clicked() ), this, SLOT( _savefilelocation() ) );
+  globalsLayout_right -> addWidget( savelocation );
 
   createItemDataSourceSelector( globalsLayout_right );
 
@@ -532,16 +549,16 @@ void SC_OptionsTab::createPlotsTab()
   plotOptionsGroupBoxLayout -> setFieldGrowthPolicy( QFormLayout::FieldsStayAtSizeHint );
 
   // Create Combo Boxes
-  choice.plots_points = addValidatorToComboBox( 1, INT_MAX, createChoice( 4, "10", "20", "30", "40" ) );
+  choice.plots_points = addValidatorToComboBox( 1, INT_MAX, createChoice( 6, "10", "20", "30", "40", "50", "100" ) );
   plotOptionsGroupBoxLayout -> addRow( tr( "Number of Plot Points" ), choice.plots_points );
 
-  choice.plots_step = addValidatorToComboBox( 1, INT_MAX, createChoice( 6, "25", "50", "100", "150", "200", "250" ) );
+  choice.plots_step = addValidatorToComboBox( 1, INT_MAX, createChoice( 8, "25", "50", "100", "150", "200", "250", "500", "1000" ) );
   plotOptionsGroupBoxLayout -> addRow( tr( "Plot Step Amount" ), choice.plots_step );
 
-  choice.plots_target_error = createChoice( 5, "N/A", "Auto", "1%", "0.5%", "0.1%" );
+  choice.plots_target_error = createChoice( 9, "N/A", "Auto", "1%", "0.5%", "0.3%", "0.1%", "0.05%", "0.03%", "0.01%" ); 
   plotOptionsGroupBoxLayout -> addRow( tr( "Plot Target Error" ), choice.plots_target_error );
 
-  choice.plots_iterations = createChoice( 4, "100", "1000", "Iter/10", "Iter/100" );
+  choice.plots_iterations = createChoice( 7, "100", "1000", "10000", "25000", "50000", "Iter/10", "Iter/100" );
   plotOptionsGroupBoxLayout -> addRow( tr( "Plot Iterations" ), choice.plots_iterations );
 
   plotOptionsGroupBox -> setLayout( plotOptionsGroupBoxLayout );
@@ -638,7 +655,7 @@ void SC_OptionsTab::decodeOptions()
   QSettings settings;
   settings.beginGroup( "options" );
   load_setting( settings, "version", choice.version );
-  load_setting( settings, "target_error", choice.target_error, "N/A" );
+  load_setting( settings, "target_error", choice.target_error, "Auto" );
   load_setting( settings, "iterations", choice.iterations, "10000" );
   load_setting( settings, "fight_length", choice.fight_length, "300" ); //More representative of raid fights nowadays. - Collision 9/3/2016
   load_setting( settings, "fight_variance", choice.fight_variance, "20" );
@@ -649,6 +666,7 @@ void SC_OptionsTab::decodeOptions()
   load_setting( settings, "threads", choice.threads, QString::number( QThread::idealThreadCount() ) );
   load_setting( settings, "process_priority", choice.process_priority, "Low" );
   load_setting( settings, "auto_save", choice.auto_save, "No" );
+  auto_save_location = settings.value( "auto_save_location" ).isNull() ? mainWindow -> AppDataDir : settings.value( "auto_save_location" ).toString();
   load_setting( settings, "armory_region", choice.armory_region );
   load_setting( settings, "armory_spec", choice.armory_spec );
   load_setting( settings, "gui_localization", choice.gui_localization );
@@ -671,10 +689,10 @@ void SC_OptionsTab::decodeOptions()
   load_setting( settings, "center_scale_delta", choice.center_scale_delta, "No" );
   load_setting( settings, "scale_over", choice.scale_over );
 
-  load_setting( settings, "plot_points", choice.plots_points, "40" );
-  load_setting( settings, "plot_step", choice.plots_step, "50" );
-  load_setting( settings, "plot_target_error", choice.plots_target_error, "1" );
-  load_setting( settings, "plot_iterations", choice.plots_iterations, "100" );
+  load_setting( settings, "plot_points", choice.plots_points, "20" );
+  load_setting( settings, "plot_step", choice.plots_step, "150" );
+  load_setting( settings, "plot_target_error", choice.plots_target_error, "0.5%" );
+  load_setting( settings, "plot_iterations", choice.plots_iterations, "10000" );
 
   load_setting( settings, "reforgeplot_amount", choice.reforgeplot_amount, "500" );
   load_setting( settings, "reforgeplot_step", choice.reforgeplot_step, "50" );
@@ -738,6 +756,7 @@ void SC_OptionsTab::encodeOptions()
   settings.setValue( "threads", choice.threads -> currentText() );
   settings.setValue( "process_priority", choice.process_priority -> currentText() );
   settings.setValue( "auto_save", choice.auto_save -> currentText() );
+  settings.setValue( "auto_save_location", auto_save_location );
   settings.setValue( "armory_region", choice.armory_region -> currentText() );
   settings.setValue( "gui_localization", choice.gui_localization -> currentText() );
   settings.setValue( "armory_spec", choice.armory_spec -> currentText() );
@@ -821,7 +840,10 @@ void SC_OptionsTab::createToolTips()
                                         "    beginning %3s into the fight" ).arg( 4 ).arg( 10 ).arg( 10 ) + "\n" +
                                     tr( "Beastlord:\n"
                                         "    Random Movement, Advanced Positioning,\n"
-                                        "    Frequent Single and Wave Add Spawns" ) );
+                                        "    Frequent Single and Wave Add Spawns" ) + "\n" +
+                                    tr( "CastingPatchwerk: Tank-n-Spank\n"
+                                        "    Boss considered always casting\n"
+                                        "    (to test interrupt procs on cooldown)" ) );
 
   choice.target_race -> setToolTip( tr( "Race of the target and any adds." ) );
 
@@ -847,7 +869,7 @@ void SC_OptionsTab::createToolTips()
 
   choice.armory_region -> setToolTip( tr( "United States, Europe, Taiwan, China, Korea" ) );
 
-  choice.armory_spec -> setToolTip( tr( "Controls which Talent/Glyph specification is used when importing profiles from the Armory." ) );
+  choice.armory_spec -> setToolTip( tr( "Controls which Talent specification is used when importing profiles from the Armory." ) );
 
   choice.gui_localization -> setToolTip( tr( "Controls the GUI display language." ) );
 
@@ -1007,7 +1029,7 @@ QString SC_OptionsTab::get_globalSettings()
   // end target spawning
 
   options += "default_skill=";
-  const char *skill[] = { "1.0", "0.9", "0.75", "0.50" };
+  const char *skill[] = { "1.0", "0.95", "0.85", "0.75" };
   options += skill[ choice.player_skill->currentIndex() ];
   options += "\n";
 
@@ -1059,7 +1081,11 @@ QString SC_OptionsTab::getReportlDestination() const
       html_filename = text;
     }
   }
-  return mainWindow -> AppDataDir + QDir::separator() + html_filename;
+  if ( auto_save_location.isEmpty() || !QDir( auto_save_location ).exists() )
+  {
+   return mainWindow -> AppDataDir + QDir::separator() + html_filename;
+  }
+  return auto_save_location + QDir::separator() + html_filename;
 }
 
 QString SC_OptionsTab::mergeOptions()
@@ -1194,8 +1220,7 @@ QString SC_OptionsTab::mergeOptions()
   options += "\n"
       "### End simulateText ###\n";
 
-  if ( choice.num_target -> currentIndex() >= 1 )
-    options += "desired_targets=" + QString::number( choice.num_target -> currentIndex() + 1 ) + "\n";
+  options += "desired_targets=" + QString::number( choice.num_target -> currentIndex() + 1 ) + "\n";
 
   options += "### Begin overrides ###\n";
   options += mainWindow -> overridesText -> toPlainText();
@@ -1377,4 +1402,16 @@ void SC_OptionsTab::_resetallSettings()
     settings.clear();
     decodeOptions();
   }
+}
+
+void SC_OptionsTab::_savefilelocation()
+{
+  QFileDialog f( this );
+  f.setDirectory( auto_save_location );
+  f.setFileMode( QFileDialog::DirectoryOnly );
+  f.setWindowTitle( tr( "Default Save Location" ) );
+
+  f.exec();
+
+  auto_save_location = f.selectedFiles().at( 0 );
 }

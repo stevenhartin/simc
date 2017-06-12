@@ -12,9 +12,8 @@ struct buff_event_t : public event_t
   buff_t* buff;
 
   buff_event_t( buff_t* b, timespan_t d ) :
-    event_t( *b -> sim, b -> player  ), buff( b )
+    event_t( *b -> sim, d  ), buff( b )
   {
-    add_event( d );
   }
 };
 
@@ -114,7 +113,7 @@ struct tick_t : public buff_event_t
       // Reorder the last tick to happen 1ms before expiration
       if ( buff -> remains() == period )
         period -= timespan_t::from_millis( 1 );
-      buff -> tick_event = new ( *buff -> sim ) tick_t( buff, period, current_value, current_stacks );
+      buff -> tick_event = make_event<tick_t>( *buff->sim, buff, period, current_value, current_stacks );
     }
   }
 };
@@ -157,6 +156,12 @@ struct expiration_delay_t : public buff_event_t
 };
 }
 
+buff_t::buff_t(actor_pair_t q, const std::string& name, const spell_data_t* spell_data) :
+    buff_t( buff_creation::buff_creator_basics_t(q, name, spell_data ) )
+{
+
+}
+
 buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
   sim( params._sim ),
   player( params._player.target ),
@@ -169,7 +174,8 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
   expiration_delay(),
   cooldown(),
   rppm( nullptr ),
-  _max_stack( 1 ),
+  _max_stack( params._max_stack ),
+  trigger_data( s_data ),
   default_value( DEFAULT_VALUE() ),
   activated( true ),
   reactable( false ),
@@ -181,7 +187,7 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
   requires_invalidation(),
   current_value(),
   current_stack(),
-  buff_duration( timespan_t() ),
+  buff_duration( params._duration ),
   default_chance( 1.0 ),
   current_tick( 0 ),
   buff_period( timespan_t::min() ),
@@ -192,6 +198,7 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
   last_start( timespan_t() ),
   last_trigger( timespan_t() ),
   iteration_uptime_sum( timespan_t() ),
+  last_benefite_update( timespan_t() ),
   up_count(),
   down_count(),
   start_count(),
@@ -226,52 +233,14 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
   }
 
   // Set Buff duration
-  if ( params._duration == timespan_t::min() )
-  {
-    if ( data().ok() )
-      buff_duration = data().duration();
-  }
-  else
-    buff_duration = params._duration;
-
-  if ( buff_duration < timespan_t::zero() )
-  {
-    buff_duration = timespan_t::zero();
-  }
+  set_duration( buff_duration );
 
   // Set Buff Cooldown
-  if ( params._cooldown == timespan_t::min() )
-  {
-    if ( data().ok() )
-    {
-      assert( ! ( data().cooldown() != timespan_t::zero() && data().internal_cooldown() != timespan_t::zero() ) );
+  set_cooldown( params._cooldown );
 
-      if ( data().cooldown() != timespan_t::zero() )
-        cooldown -> duration = data().cooldown();
-      else
-        cooldown -> duration = data().internal_cooldown();
-    }
-  }
-  else
-    cooldown -> duration = params._cooldown;
-
-  // Set Max stacks
-  if ( params._max_stack == -1 )
-  {
-    if ( data().ok() )
-    {
-      if ( data().max_stacks() != 0 )
-        _max_stack = data().max_stacks();
-      else if ( data().initial_stacks() != 0 )
-        _max_stack = std::abs( data().initial_stacks() );
-    }
-  }
-  else
-    _max_stack = params._max_stack;
 
   // If the params specifies a trigger spell (even if it's not found), use it instead of the actual
   // spell data of the buff.
-  const spell_data_t* trigger_data = s_data;
   if ( params._trigger_data != spell_data_t::nil() )
   {
     trigger_data = params._trigger_data;
@@ -329,25 +298,190 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
     }
   }
 
-  default_value = params._default_value;
+  set_default_value( params._default_value );
 
   // Set Reverse flag
   if ( params._reverse != -1 )
-    reverse = params._reverse != 0;
+    set_reverse( params._reverse );
 
   // Set Quiet flag
   if ( params._quiet != -1 )
-    quiet = params._quiet != 0;
+    set_quiet( params._quiet );
 
   // Set Activated flag
   if ( params._activated != -1 )
-    activated = params._activated != 0;
+    set_activated( params._activated );
 
   if ( params._can_cancel != -1 )
-    can_cancel = params._can_cancel != 0;
+    set_can_cancel( params._can_cancel );
 
-  if ( params._period >= timespan_t::zero() )
-    buff_period = params._period;
+  set_period( params._period );
+
+  set_tick_behavior( params._behavior );
+
+  if ( params._tick_callback )
+    set_tick_callback( std::move(params._tick_callback) );
+
+  set_tick_zero( params._initial_tick );
+  set_tick_time_behavior( params._tick_time_behavior );
+  if ( tick_time_behavior == BUFF_TICK_TIME_CUSTOM )
+  {
+    set_tick_time_callback( params._tick_time_callback );
+  }
+
+  if ( params._affects_regen == -1 && player && player -> regen_type == REGEN_DYNAMIC )
+  {
+    for (auto & elem : params._invalidate_list)
+    {
+      if ( player -> regen_caches[ elem ] )
+        change_regen_rate = true;
+    }
+  }
+  else
+  {
+    set_affects_regen( params._affects_regen );
+  }
+
+  if ( params._refresh_duration_callback )
+    set_refresh_duration_callback( params._refresh_duration_callback );
+  set_refresh_behavior( params._refresh_behavior );
+
+  stack_behavior = params._stack_behavior;
+
+  assert( refresh_behavior != BUFF_REFRESH_CUSTOM || refresh_duration_callback );
+
+  invalidate_list = params._invalidate_list;
+  requires_invalidation = ! invalidate_list.empty();
+
+  if ( player && ! player -> cache.active ) requires_invalidation = false;
+
+  stack_change_callback = params._stack_change_callback;
+
+  set_max_stack( _max_stack );
+}
+
+buff_t* buff_t::set_duration( timespan_t duration )
+{
+  // Set Buff duration
+  if ( duration == timespan_t::min() )
+  {
+  if ( data().ok() )
+  {
+    buff_duration = data().duration();
+  }
+  else
+  {
+    buff_duration = timespan_t();
+  }
+  }
+  else
+  {
+    buff_duration = duration;
+  }
+
+  if ( buff_duration < timespan_t::zero() )
+  {
+  buff_duration = timespan_t::zero();
+  }
+  return this;
+}
+
+buff_t* buff_t::set_max_stack( int max_stack )
+{
+  // Set Max stacks
+  if ( max_stack == -1 )
+  {
+  if ( data().ok() )
+  {
+    if ( data().max_stacks() != 0 )
+    {
+      _max_stack = data().max_stacks();
+    }
+    else if ( data().initial_stacks() != 0 )
+    {
+      _max_stack = std::abs( data().initial_stacks() );
+    }
+    else
+    {
+      _max_stack = 1;
+    }
+  }
+  else
+  {
+    _max_stack = 1;
+  }
+  }
+  else
+  {
+  _max_stack = max_stack;
+  }
+
+  if ( _max_stack < 1 )
+  {
+    sim -> errorf( "buff %s: initialized with max_stack < 1 (%d). Setting max_stack to 1.\n", name_str.c_str(), _max_stack );
+    _max_stack = 1;
+  }
+
+  if ( _max_stack > 999 )
+  {
+    _max_stack = 999;
+    sim -> errorf( "buff %s: initialized with max_stack > 999. Setting max_stack to 999.\n", name_str.c_str() );
+  }
+
+  stack_occurrence.resize( _max_stack + 1 );
+  stack_react_time.resize( _max_stack + 1 );
+  stack_react_ready_triggers.resize( _max_stack + 1 );
+
+  if ( as<int>( stack_uptime.size() ) < _max_stack )
+  {
+    stack_uptime.resize( _max_stack + 1 );
+  }
+  return this;
+}
+
+
+buff_t* buff_t::set_cooldown( timespan_t duration )
+{
+  // Set Buff duration
+  if ( duration == timespan_t::min() )
+  {
+    if ( data().ok() )
+    {
+      assert( ! ( data().cooldown() != timespan_t::zero() && data().internal_cooldown() != timespan_t::zero() ) );
+
+      if ( data().cooldown() != timespan_t::zero() )
+      {
+        cooldown -> duration = data().cooldown();
+      }
+      else
+      {
+        cooldown -> duration = data().internal_cooldown();
+      }
+    }
+//    else
+//    {
+//      cooldown -> duration = timespan_t();
+//    }
+  }
+  else
+  {
+    cooldown -> duration = duration;
+  }
+
+  if ( cooldown -> duration < timespan_t::zero() )
+  {
+    cooldown -> duration = timespan_t::zero();
+  }
+
+  return this;
+}
+
+buff_t* buff_t::set_period( timespan_t period )
+{
+  if ( period >= timespan_t::zero() )
+  {
+    buff_period = period;
+  }
   else
   {
     for ( size_t i = 1; i <= s_data -> effect_count(); i++ )
@@ -373,92 +507,21 @@ buff_t::buff_t( const buff_creation::buff_creator_basics_t& params ) :
       }
     }
   }
-
-  if ( params._behavior != BUFF_TICK_NONE )
-    tick_behavior = params._behavior;
-  // If period is set, buf no buff tick behavior, set the behavior
-  // automatically to clipped ticks
-  else if ( buff_period > timespan_t::zero() && params._behavior == BUFF_TICK_NONE )
-    tick_behavior = BUFF_TICK_CLIP;
-
-  if ( params._tick_callback )
-    tick_callback = params._tick_callback;
-
-  tick_zero = params._initial_tick;
-  tick_time_behavior = params._tick_time_behavior;
-  if ( tick_time_behavior == BUFF_TICK_TIME_CUSTOM )
-  {
-    tick_time_callback = params._tick_time_callback;
-  }
-
-  if ( params._affects_regen == -1 && player && player -> regen_type == REGEN_DYNAMIC )
-  {
-    for (auto & elem : params._invalidate_list)
-    {
-      if ( player -> regen_caches[ elem ] )
-        change_regen_rate = true;
-    }
-  }
-  else if ( params._affects_regen != -1 )
-    change_regen_rate = params._affects_regen != 0;
-
-  if ( params._refresh_behavior == BUFF_REFRESH_NONE )
-  {
-    // In wod, default behavior for ticking buffs is to pandemic-extend the duration
-    if ( tick_behavior == BUFF_TICK_CLIP || tick_behavior == BUFF_TICK_REFRESH )
-      refresh_behavior = BUFF_REFRESH_PANDEMIC;
-    // Otherwise, just do the full-duration refresh
-    else
-      refresh_behavior = BUFF_REFRESH_DURATION;
-  }
-  else
-    refresh_behavior = params._refresh_behavior;
-
-  stack_behavior = params._stack_behavior;
-
-  if ( params._refresh_duration_callback )
-    refresh_duration_callback = params._refresh_duration_callback;
-
-  assert( refresh_behavior != BUFF_REFRESH_CUSTOM || refresh_duration_callback );
-
-  invalidate_list = params._invalidate_list;
-  requires_invalidation = ! invalidate_list.empty();
-
-  if ( player && ! player -> cache.active ) requires_invalidation = false;
-
-  stack_change_callback = params._stack_change_callback;
-
-  if ( _max_stack < 1 )
-  {
-    sim -> errorf( "buff %s: initialized with max_stack < 1 (%d). Setting max_stack to 1.\n", name_str.c_str(), _max_stack );
-    _max_stack = 1;
-  }
-
-  if ( _max_stack > 999 )
-  {
-    _max_stack = 999;
-    sim -> errorf( "buff %s: initialized with max_stack > 999. Setting max_stack to 999.\n", name_str.c_str() );
-  }
-
-  // Keep non hidden reported numbers clean
-  //start_intervals.mean = 0;
-  // trigger_intervals.mean = 0;
-
-  stack_occurrence.resize( _max_stack + 1 );
-  stack_react_time.resize( _max_stack + 1 );
-  stack_react_ready_triggers.resize( _max_stack + 1 );
-
-  if ( as<int>( stack_uptime.size() ) < _max_stack )
-  {
-      stack_uptime.resize(_max_stack+1);
-  }
+  return this;
 }
 
-void buff_t::add_invalidate( cache_e c )
+//
+//buff_t* buff_t::set_chance( double chance )
+//{
+//  assert( false && "not yet implemented" );
+//  return this;
+//}
+
+buff_t* buff_t::add_invalidate( cache_e c )
 {
   if ( c == CACHE_NONE )
   {
-    return;
+    return this;
   }
 
   if ( range::find( invalidate_list, c ) == invalidate_list.end() ) // avoid duplication
@@ -466,8 +529,106 @@ void buff_t::add_invalidate( cache_e c )
     invalidate_list.push_back( c );
     requires_invalidation = true;
   }
+  return this;
 }
 
+buff_t* buff_t::set_default_value( double value )
+{
+  default_value = value;
+  return this;
+}
+
+buff_t* buff_t::set_reverse( bool r )
+{
+  reverse = r;
+  return this;
+}
+
+buff_t* buff_t::set_quiet( bool q)
+{
+  quiet = q;
+  return this;
+}
+
+buff_t* buff_t::set_activated( bool a )
+{
+ activated = a;
+ return this;
+}
+
+buff_t* buff_t::set_can_cancel( bool cc )
+{
+
+  can_cancel = cc;
+  return this;
+}
+
+buff_t* buff_t::set_tick_behavior( buff_tick_behavior_e behavior )
+{
+  if ( behavior != BUFF_TICK_NONE )
+  {
+    tick_behavior = behavior;
+  }
+  // If period is set, buf no buff tick behavior, set the behavior automatically to clipped ticks
+  else if ( buff_period > timespan_t::zero() && behavior == BUFF_TICK_NONE )
+  {
+    tick_behavior = BUFF_TICK_CLIP;
+  }
+
+  return this;
+}
+
+buff_t* buff_t::set_tick_callback( buff_tick_callback_t fn )
+{
+  tick_callback = std::move(fn);
+  return this;
+}
+
+buff_t* buff_t::set_tick_time_callback( buff_tick_time_callback_t cb )
+{
+  set_tick_time_behavior( BUFF_TICK_TIME_CUSTOM );
+  tick_time_callback = std::move(cb);
+  return this;
+}
+
+buff_t* buff_t::set_affects_regen( bool state )
+{
+  change_regen_rate = state;
+  return this;
+}
+
+buff_t* buff_t::set_refresh_behavior( buff_refresh_behavior_e b)
+{
+  if ( b == BUFF_REFRESH_NONE )
+  {
+    // In wod, default behavior for ticking buffs is to pandemic-extend the duration
+    if ( tick_behavior == BUFF_TICK_CLIP || tick_behavior == BUFF_TICK_REFRESH )
+    {
+      refresh_behavior = BUFF_REFRESH_PANDEMIC;
+    }
+    // Otherwise, just do the full-duration refresh
+    else
+    {
+      refresh_behavior = BUFF_REFRESH_DURATION;
+    }
+  }
+  else
+  {
+    refresh_behavior = b;
+  }
+  assert( refresh_behavior != BUFF_REFRESH_CUSTOM || refresh_duration_callback );
+  return this;
+}
+
+buff_t* buff_t::set_refresh_duration_callback( buff_refresh_duration_callback_t cb)
+{
+  if ( cb )
+  {
+    refresh_behavior = BUFF_REFRESH_CUSTOM;
+    refresh_duration_callback = std::move(cb);
+  }
+  return this;
+}
 // buff_t::datacollection_begin =============================================
 
 void buff_t::datacollection_begin()
@@ -511,20 +672,9 @@ void buff_t::datacollection_end()
   avg_overflow_total.add( overflow_total );
 }
 
-// buff_t::set_max_stack ====================================================
-
-void buff_t::set_max_stack( unsigned stack )
+void buff_t::init()
 {
-  _max_stack = stack;
 
-  stack_occurrence.resize( _max_stack + 1 );
-  stack_react_time.resize( _max_stack + 1 );
-  stack_react_ready_triggers.resize( _max_stack + 1 );
-
-  if ( as<int>( stack_uptime.size() ) < _max_stack )
-  {
-    stack_uptime.resize( _max_stack + 1 );
-  }
 }
 
 // buff_t:: refresh_duration ================================================
@@ -755,7 +905,7 @@ bool buff_t::trigger( int        stacks,
       d.value = value;
     }
     else
-      delay = new ( *sim ) buff_delay_t( this, stacks, value, duration );
+      delay = make_event<buff_delay_t>( *sim, this, stacks, value, duration );
   }
   else
     execute( stacks, value, duration );
@@ -870,6 +1020,11 @@ void buff_t::decrement( int    stacks,
 
 void buff_t::extend_duration( player_t* p, timespan_t extra_seconds )
 {
+  if ( ! check() )
+  {
+    return;
+  }
+
   if ( stack_behavior == BUFF_STACK_ASYNCHRONOUS )
   {
     sim -> errorf( "%s attempts to extend asynchronous buff %s.", p -> name(), name() );
@@ -881,6 +1036,11 @@ void buff_t::extend_duration( player_t* p, timespan_t extra_seconds )
   if ( extra_seconds > timespan_t::zero() )
   {
     expiration.front() -> reschedule( expiration.front() -> remains() + extra_seconds );
+
+    if (sim->log)
+      sim->out_log.printf("%s extends buff %s by %.1f seconds. New expiration time: %.1f",
+                          p->name(), name_str.c_str(), extra_seconds.total_seconds(), 
+                          expiration.front()->occurs().total_seconds());
 
     if ( sim -> debug )
       sim -> out_debug.printf( "%s extends buff %s by %.1f seconds. New expiration time: %.1f",
@@ -905,7 +1065,7 @@ void buff_t::extend_duration( player_t* p, timespan_t extra_seconds )
     event_t::cancel( expiration.front() );
     expiration.erase( expiration.begin() );
 
-    expiration.push_back( new ( *sim ) expiration_t( this, reschedule_time ) );
+    expiration.push_back( make_event<expiration_t>( *sim, this, reschedule_time ) );
 
     if ( sim -> debug )
       sim -> out_debug.printf( "%s decreases buff %s by %.1f seconds. New expiration time: %.1f",
@@ -930,9 +1090,11 @@ void buff_t::start( int        stacks,
   }
 #endif
 
+  timespan_t d = ( duration >= timespan_t::zero() ) ? duration : buff_duration;
+
   if ( sim -> current_time() <= timespan_t::from_seconds( 0.01 ) )
   {
-    if ( buff_duration == timespan_t::zero() || ( buff_duration > timespan_t::from_seconds( sim -> expected_max_time() ) ) )
+    if ( d == timespan_t::zero() || ( d > timespan_t::from_seconds( sim -> expected_max_time() ) ) )
       constant = true;
   }
 
@@ -959,7 +1121,7 @@ void buff_t::start( int        stacks,
     }
   }
 
-  int before_stacks = stack();
+  int before_stacks = check();
 
   bump( stacks, value );
 
@@ -973,16 +1135,16 @@ void buff_t::start( int        stacks,
     last_start = sim -> current_time();
   }
 
-  timespan_t d = ( duration >= timespan_t::zero() ) ? duration : buff_duration;
-
   if ( d > timespan_t::zero() )
   {
-    expiration.push_back( new ( *sim ) expiration_t( this, stacks, d ) );
-    if ( stack() == before_stacks && stack_behavior == BUFF_STACK_ASYNCHRONOUS )
+    expiration.push_back( make_event<expiration_t>( *sim, this, stacks, d ) );
+    /* TOCHECK: This seems wrong, since bump() already removes expiration events when we are at max stacks
+    if ( check() == before_stacks && stack_behavior == BUFF_STACK_ASYNCHRONOUS )
     {
       event_t::cancel( expiration.front() );
       expiration.erase( expiration.begin() );
     }
+    */
   }
 
   timespan_t period = tick_time();
@@ -995,7 +1157,7 @@ void buff_t::start( int        stacks,
     if ( period == d )
       period -= timespan_t::from_millis( 1 );
     assert( ! tick_event );
-    tick_event = new ( *sim ) tick_t( this, period, current_value, reverse ? 1 : stacks );
+    tick_event = make_event<tick_t>( *sim, this, period, current_value, reverse ? 1 : stacks );
 
     if ( tick_zero && tick_callback )
     {
@@ -1044,7 +1206,7 @@ void buff_t::refresh( int        stacks,
   {
     // Infinite duration -> duration of d
     if ( expiration.empty() )
-      expiration.push_back( new ( *sim ) expiration_t( this, d ) );
+      expiration.push_back( make_event<expiration_t>( *sim, this, d ) );
     else
     {
       timespan_t duration_remains = expiration.front() -> remains();
@@ -1054,7 +1216,7 @@ void buff_t::refresh( int        stacks,
       {
         event_t::cancel( expiration.front() );
         expiration.erase( expiration.begin() );
-        expiration.push_back( new ( *sim ) expiration_t( this, d ) );
+        expiration.push_back( make_event<expiration_t>( *sim, this, d ) );
       }
     }
 
@@ -1066,7 +1228,7 @@ void buff_t::refresh( int        stacks,
       // Reorder the last tick to happen 1ms before expiration
       if ( period == d )
         period -= timespan_t::from_millis( 1 );
-      tick_event = new ( *sim ) tick_t( this, period, current_value, reverse ? 1 : stacks );
+      tick_event = make_event<tick_t>( *sim, this, period, current_value, reverse ? 1 : stacks );
     }
 
     if ( tick_zero && tick_callback )
@@ -1152,7 +1314,7 @@ void buff_t::bump( int stacks, double value )
         {
           if ( ! stack_react_ready_triggers[ i ] )
           {
-            stack_react_ready_triggers[ i ] = new ( *sim ) react_ready_trigger_t( this, i, total_reaction_time );
+            stack_react_ready_triggers[ i ] = make_event<react_ready_trigger_t>( *sim, this, i, total_reaction_time );
           }
           else
           {
@@ -1164,7 +1326,7 @@ void buff_t::bump( int stacks, double value )
             else if ( next_react < stack_react_ready_triggers[ i ] -> occurs() )
             {
               event_t::cancel( stack_react_ready_triggers[ i ] );
-              stack_react_ready_triggers[ i ] = new ( *sim ) react_ready_trigger_t( this, i, total_reaction_time );
+              stack_react_ready_triggers[ i ] = make_event<react_ready_trigger_t>( *sim, this, i, total_reaction_time );
             }
           }
         }
@@ -1220,7 +1382,7 @@ void buff_t::expire( timespan_t delay )
   {
     if ( ! expiration_delay ) // Don't reschedule already existing expiration delay
     {
-      expiration_delay = new ( *sim ) expiration_delay_t( this, delay );
+      expiration_delay = make_event<expiration_delay_t>( *sim, this, delay );
     }
     return;
   }
@@ -1419,9 +1581,17 @@ void buff_t::merge( const buff_t& other )
 
 void buff_t::analyze()
 {
-
   if ( sim -> buff_uptime_timeline )
-    uptime_array.adjust( *sim );
+  {
+    if ( ! sim -> single_actor_batch )
+    {
+      uptime_array.adjust( *sim );
+    }
+    else
+    {
+      uptime_array.adjust( source -> collected_data.fight_length );
+    }
+  }
 }
 
 // buff_t::find =============================================================
@@ -1736,6 +1906,11 @@ void buff_t::invalidate_cache()
 // STAT_BUFF
 // ==========================================================================
 
+stat_buff_t::stat_buff_t(actor_pair_t q, const std::string& name,
+    const spell_data_t* spell) :
+    stat_buff_t(stat_buff_creator_t(q, name, spell)) {
+
+}
 // stat_buff_t::stat_buff_t =================================================
 
 stat_buff_t::stat_buff_t( const stat_buff_creator_t& params ) :
@@ -1771,15 +1946,14 @@ stat_buff_t::stat_buff_t( const stat_buff_creator_t& params ) :
       else if ( effect.subtype() == A_MOD_RATING )
       {
         std::vector<stat_e> k = util::translate_all_rating_mod( effect.misc_value1() );
-        double coeff = 1.0;
         if ( params.item )
         {
-          coeff = source -> dbc.combat_rating_multiplier( params.item -> item_level() );
+          amount = item_database::apply_combat_rating_multiplier( *params.item, amount );
         }
 
         for ( size_t j = 0; j < k.size(); j++ )
         {
-          stats.push_back( buff_stat_t( k[ j ], amount * coeff ) );
+          stats.push_back( buff_stat_t( k[ j ], amount ) );
         }
       }
       else if ( effect.subtype() == A_MOD_DAMAGE_DONE && ( effect.misc_value1() & 0x7E ) )
@@ -1963,6 +2137,12 @@ void cost_reduction_buff_t::expire_override( int expiration_stacks, timespan_t r
 // HASTE_BUFF
 // ==========================================================================
 
+haste_buff_t::haste_buff_t( actor_pair_t q, const std::string& name, const spell_data_t* spell ) :
+    haste_buff_t( haste_buff_creator_t(q, name, spell ) )
+{
+
+}
+
 haste_buff_t::haste_buff_t( const haste_buff_creator_t& params ) :
   buff_t( params ), haste_type( HASTE_NONE )
 {
@@ -2008,19 +2188,14 @@ haste_buff_t::haste_buff_t( const haste_buff_creator_t& params ) :
 
 // haste_buff_t::execute ====================================================
 
-void haste_buff_t::increment( int stacks, double value, timespan_t duration )
+
+void haste_buff_t::bump( int stacks, double value )
 {
   bool is_changed = check() < max_stack() || value != current_value;
 
-  buff_t::increment( stacks, value, duration );
+  buff_t::bump( stacks, value );
 
-  if ( is_changed )
-  {
-    player -> adjust_dynamic_cooldowns();
-    player -> adjust_global_cooldown( haste_type );
-    player -> adjust_auto_attack( haste_type );
-    player -> adjust_action_queue_time();
-  }
+  haste_adjusted( is_changed );
 }
 
 // haste_buff_t::decrement =====================================================
@@ -2031,13 +2206,18 @@ void haste_buff_t::decrement( int stacks, double value )
 
   buff_t::decrement( stacks, value );
 
-  if ( is_changed )
-  {
-    player -> adjust_dynamic_cooldowns();
-    player -> adjust_global_cooldown( haste_type );
-    player -> adjust_auto_attack( haste_type );
-    player -> adjust_action_queue_time();
-  }
+  haste_adjusted( is_changed );
+}
+
+void haste_buff_t::haste_adjusted( bool is_changed )
+{
+  if ( !is_changed )
+    return;
+
+  player->adjust_dynamic_cooldowns();
+  //player->adjust_global_cooldown( haste_type );
+  player->adjust_auto_attack( haste_type );
+  player->adjust_action_queue_time();
 }
 
 // haste_buff_t::expire_override ==============================================
@@ -2051,7 +2231,7 @@ void haste_buff_t::expire( timespan_t delay )
   if ( is_changed )
   {
     player -> adjust_dynamic_cooldowns();
-    player -> adjust_global_cooldown( haste_type );
+    //player -> adjust_global_cooldown( haste_type );
     player -> adjust_auto_attack( haste_type );
     player -> adjust_action_queue_time();
   }
@@ -2083,15 +2263,6 @@ bool tick_buff_t::trigger( int stacks, double value, double chance, timespan_t d
   return buff_t::trigger( stacks, value, chance, duration );
 }
 */
-// ==========================================================================
-// DEBUFF
-// ==========================================================================
-
-debuff_t::debuff_t( const buff_creator_basics_t& params ) :
-  buff_t( params )
-{}
-
-// Absorb Buff
 
 absorb_buff_t::absorb_buff_t( const absorb_buff_creator_t& params ) :
   buff_t( params ),

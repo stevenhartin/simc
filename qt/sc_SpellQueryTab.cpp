@@ -35,7 +35,6 @@ const QString sources[] =
   "race_spell",
   "mastery",
   "spec_spell",
-  "glyph",
   "set_bonus",
   "effect",
   "spell.effect",
@@ -88,7 +87,7 @@ const FilterEntry filters[] =
   { "ap_coeff",       false, false, "" }, // these are for effects only
   { "sp_coeff",       false, false, "" },
   { "type",           false, false, "" },
-  { NULL,            NULL,  NULL, NULL }
+  { NULL,            false,  false, NULL }
 };
 
 const QString numericOperators[] = 

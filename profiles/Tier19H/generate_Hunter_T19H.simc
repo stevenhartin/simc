@@ -1,91 +1,77 @@
-# T19H
-# Tier 19 Heroic
-# * Ilvl Cap: 865
-# * Artifact Rank Cap: 26
-# * 3 Relics with max ilevel of 865
-# * Mythic+ gear is permitted up to the item level cap.
-# * No items from Nighthold (including set bonuses)
-# * No Legendaries
-# * No Random Gems (ie. Bonus RNG Gem Slots)
-# * No Tertiary Stats
-# * No Ranked Gear (ie. Warforged/Titanforged)
-# * No Hardcoded Stats (generally if an item gives wrong stats: either bonus_id is wrong, either the item no longer exists in-game)
-# * It is recommended to use enchant name (ex : ",enchant=binding_of_mastery") rather than id/hardcoded stats.
-
-hunter="Hunter_BM_T19H"
+hunter="Hunter_Beast_Mastery_T19H"
 level=110
-race=pandaren
+race=orc
 role=attack
 position=ranged_back
-talents=1102012
+talents=3102012
 artifact=56:0:0:0:0:868:3:869:3:870:3:872:3:874:3:875:3:878:1:879:1:880:1:881:1:882:1:1095:3:1336:1
 spec=beast_mastery
 
-head=greyed_dragonscale_coif,id=139214,bonus_id=1805
-neck=cursed_beartooth_necklace,id=139239,bonus_id=1805,enchant=mark_of_the_claw
-shoulders=thorny_bramblemail_pauldrons,id=139218,bonus_id=1805
-back=gossamerspun_greatcloak,id=138221,bonus_id=1805,enchant=200agi
-chest=patient_ambushers_hauberk,id=139221,bonus_id=1805
-wrists=manacles_of_the_nightmare_colossus,id=139222,bonus_id=1805
-hands=gauntlets_of_the_demented_mind,id=138214,bonus_id=1805
-waist=creeping_string_of_larva,id=139212,bonus_id=1805
-legs=singular_chain_leggings,id=139215,bonus_id=1805
-feet=black_venom_sabatons,id=139219,bonus_id=1805
-finger1=mindrend_band,id=138220,bonus_id=1805,enchant=200mastery
-finger2=dreadful_cyclopean_signet,id=139237,bonus_id=1805,enchant=200mastery
-trinket1=twisting_wind,id=139323,bonus_id=1805
-trinket2=stormsinger_fulmination_charge,id=137367,bonus_id=1727
-main_hand=titanstrike,id=128861,gem_id=139262/139269/139255,relic_id=1805/1805/1805
-save=Hunter_BM_T19H.simc
+head=collar_of_honorable_exultation,id=136777,bonus_id=1517/3418
+neck=intrepid_necklace_of_prophecy,id=130240,bonus_id=669/1769,gems=200agility,enchant=mark_of_the_hidden_satyr
+shoulders=epaulets_of_deceitful_intent,id=134480,bonus_id=1517/3418
+back=drape_of_the_raven_lord,id=136770,bonus_id=1517/3418,enchant=binding_of_agility
+chest=thunderfused_valkyr_hauberk,id=133622,bonus_id=1517/3418
+wrists=remorseless_chain_armbands,id=137405,bonus_id=1517/3418
+hands=lavabreaker_gauntlets,id=137519,bonus_id=1517/3418
+waist=creeping_string_of_larva,id=139212,bonus_id=1487/1805
+legs=singular_chain_leggings,id=139215,bonus_id=1487/1805
+feet=whelp_handlers_lined_boots,id=134464,bonus_id=1517/3418
+finger1=archdruids_tainted_seal,id=134487,bonus_id=1517/3418,enchant=binding_of_mastery
+finger2=shadowruby_band,id=136713,bonus_id=669/1703,gems=150mastery,enchant=binding_of_mastery
+trinket1=chrono_shard,id=137419,bonus_id=1517/3418
+trinket2=bloodthirsty_instinct,id=139329,bonus_id=1487/1805
+main_hand=titanstrike,id=128861,ilevel=894,gem_id=137365/133768/137543
+save=Hunter_Beast_Mastery_T19H.simc
 
-hunter="Hunter_MM_T19H"
+hunter="Hunter_Marksmanship_T19H"
 level=110
-race=pandaren
+race=troll
 role=attack
 position=ranged_back
-talents=1103021
+talents=1303013
 artifact=55:0:0:0:0:307:1:308:1:310:1:311:1:312:3:313:3:314:2:315:3:318:3:319:3:320:3:321:1:322:1:1337:1
 spec=marksmanship
 
-head=greyed_dragonscale_coif,id=139214,bonus_id=1805
-neck=cursed_beartooth_necklace,id=139239,bonus_id=1805,enchant=mark_of_the_claw
-shoulders=thorny_bramblemail_pauldrons,id=139218,bonus_id=1805
-back=gossamerspun_greatcloak,id=138221,bonus_id=1805,enchant=200agi
-chest=patient_ambushers_hauberk,id=139221,bonus_id=1805
-wrists=manacles_of_the_nightmare_colossus,id=139222,bonus_id=1805
-hands=gauntlets_of_the_demented_mind,id=138214,bonus_id=1805
-waist=creeping_string_of_larva,id=139212,bonus_id=1805
-legs=singular_chain_leggings,id=139215,bonus_id=1805
-feet=black_venom_sabatons,id=139219,bonus_id=1805
-finger1=mindrend_band,id=138220,bonus_id=1805,enchant=200mastery
-finger2=dreadful_cyclopean_signet,id=139237,bonus_id=1805,enchant=200mastery
-trinket1=twisting_wind,id=139323,bonus_id=1805
-trinket2=stormsinger_fulmination_charge,id=137367,bonus_id=1727
-main_hand=thasdorah_legacy_of_the_windrunners,id=128826,gem_id=139262/139257/138228,relic_id=1805/1805/1805
-save=Hunter_MM_T19H.simc
+head=collar_of_honorable_exultation,id=136777,bonus_id=1517/3418
+neck=intrepid_necklace_of_prophecy,id=130240,bonus_id=669/1769,gems=200agility,enchant=mark_of_the_hidden_satyr
+shoulders=epaulets_of_deceitful_intent,id=134480,bonus_id=1517/3418
+back=drape_of_the_raven_lord,id=136770,bonus_id=1517/3418,enchant=binding_of_agility
+chest=thunderfused_valkyr_hauberk,id=133622,bonus_id=1517/3418
+wrists=remorseless_chain_armbands,id=137405,bonus_id=1517/3418
+hands=lavabreaker_gauntlets,id=137519,bonus_id=1517/3418
+waist=creeping_string_of_larva,id=139212,bonus_id=1487/1805
+legs=singular_chain_leggings,id=139215,bonus_id=1487/1805
+feet=whelp_handlers_lined_boots,id=134464,bonus_id=1517/3418
+finger1=archdruids_tainted_seal,id=134487,bonus_id=1517/3418,enchant=binding_of_mastery
+finger2=shadowruby_band,id=136713,bonus_id=669/1703,gems=150mastery,enchant=binding_of_mastery
+trinket1=naraxas_spiked_tongue,id=137349,bonus_id=1517/3418
+trinket2=bloodthirsty_instinct,id=139329,bonus_id=1487/1805
+main_hand=thasdorah_legacy_of_the_windrunners,id=128826,ilevel=894,gem_id=137313/136718/137381
+save=Hunter_Marksmanship_T19H.simc
 
-hunter="Hunter_SV_T19H"
+hunter="Hunter_Survival_T19H"
 level=110
-race=pandaren
+race=orc
 role=attack
-position=back
-talents=3302022
+position=ranged_back
+talents=3101031
 artifact=34:0:0:0:0:1068:1:1070:2:1072:3:1073:3:1074:3:1075:3:1076:3:1077:3:1079:1:1080:1:1082:1:1083:1:1084:1:1338:1
 spec=survival
 
-head=greyed_dragonscale_coif,id=139214,bonus_id=1805
-neck=blackened_portalstone_necklace,id=139332,bonus_id=1805,enchant=mark_of_the_claw
-shoulders=matted_fur_pauldrons,id=139217,bonus_id=1805
-back=evergreen_vinewrap_drape,id=139248,bonus_id=1805,enchant=200agi
-chest=patient_ambushers_hauberk,id=139221,bonus_id=1805
-wrists=manacles_of_the_nightmare_colossus,id=139222,bonus_id=1805
-hands=gauntlets_of_malevolent_intent,id=139213,bonus_id=1805
-waist=laughing_sisters_pouchchain,id=139211,bonus_id=1805
-legs=disjointed_linkage_leggings,id=139216,bonus_id=1805
-feet=malignant_sabatons,id=138211,bonus_id=1805
-finger1=grubby_silver_ring,id=139236,bonus_id=1805,enchant=200vers
-finger2=twicewarped_azsharan_signet,id=139238,bonus_id=1805,enchant=200vers
-trinket1=bloodthirsty_instinct,id=139329,bonus_id=1805
-trinket2=natures_call,id=139334,bonus_id=1805
-main_hand=talonclaw,id=128808,gem_id=139262/139257/139255,relic_id=1805/1805/1805
-save=Hunter_SV_T19H.simc
+head=helm_of_endless_dunes,id=134471,bonus_id=1517/3418
+neck=intrepid_necklace_of_prophecy,id=130240,bonus_id=669/1748,gems=200agility,enchant=mark_of_the_hidden_satyr
+shoulders=epaulets_of_deceitful_intent,id=134480,bonus_id=1517/3418
+back=cloak_of_manaspun_silk,id=134410,bonus_id=1517/3418,enchant=binding_of_agility
+chest=decontaminated_chain_tunic,id=134463,bonus_id=1517/3418
+wrists=remorseless_chain_armbands,id=137405,bonus_id=1517/3418
+hands=gauntlets_of_malevolent_intent,id=139213,bonus_id=1487/1805
+waist=laughing_sisters_pouchchain,id=139211,bonus_id=1487/1805
+legs=disjointed_linkage_leggings,id=139216,bonus_id=1487/1805
+feet=malignant_sabatons,id=138211,bonus_id=1487/1805
+finger1=maelstrom_band,id=130230,bonus_id=669/1682,gems=150vers,enchant=binding_of_versatility
+finger2=grubby_silver_ring,id=139236,bonus_id=1487/1805,enchant=binding_of_versatility
+trinket1=tirathons_betrayal,id=137537,bonus_id=1517/3418
+trinket2=bloodthirsty_instinct,id=139329,bonus_id=1487/1805
+main_hand=talonclaw,id=128808,ilevel=894,gem_id=137550/137408/137350
+save=Hunter_Survival_T19H.simc

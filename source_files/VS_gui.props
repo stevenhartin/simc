@@ -35,6 +35,9 @@ To change the list of source files, update the QT_ files and run synchronize.py
 		<ClCompile Include="$(IntDir)moc_sc_importWidget.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
+		<ClCompile Include="$(IntDir)moc_sc_Workaround.cpp">
+			<PrecompiledHeader>NotUsing</PrecompiledHeader>
+		</ClCompile>
 		<ClCompile Include="$(IntDir)moc_sc_WelcomeTab.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
@@ -54,6 +57,9 @@ To change the list of source files, update the QT_ files and run synchronize.py
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
 		<ClCompile Include="$(IntDir)moc_sc_AutomationTab.cpp">
+			<PrecompiledHeader>NotUsing</PrecompiledHeader>
+		</ClCompile>
+		<ClCompile Include="$(IntDir)moc_sc_AddonImportTab.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
 		<ClCompile Include="..\qt\util\sc_textedit.cpp">
@@ -83,6 +89,9 @@ To change the list of source files, update the QT_ files and run synchronize.py
 		<ClCompile Include="..\qt\sc_importWidget.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
+		<ClCompile Include="..\qt\sc_Workaround.cpp">
+			<PrecompiledHeader>NotUsing</PrecompiledHeader>
+		</ClCompile>
 		<ClCompile Include="..\qt\sc_WelcomeTab.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
@@ -104,7 +113,13 @@ To change the list of source files, update the QT_ files and run synchronize.py
 		<ClCompile Include="..\qt\sc_ImportThread.cpp">
 			
 		</ClCompile>
+		<ClCompile Include="..\qt\sc_ImportTab.cpp">
+			<PrecompiledHeader>NotUsing</PrecompiledHeader>
+		</ClCompile>
 		<ClCompile Include="..\qt\sc_AutomationTab.cpp">
+			<PrecompiledHeader>NotUsing</PrecompiledHeader>
+		</ClCompile>
+		<ClCompile Include="..\qt\sc_AddonImportTab.cpp">
 			<PrecompiledHeader>NotUsing</PrecompiledHeader>
 		</ClCompile>
 		<ClCompile Include="..\qt\main.cpp">
@@ -209,6 +224,13 @@ To change the list of source files, update the QT_ files and run synchronize.py
 			<AdditionalInputs>Rem;..\qt\sc_importWidget.hpp;%(AdditionalInputs)</AdditionalInputs>
 			<Outputs>$(IntDir)\moc_%(Filename).cpp</Outputs>
 		</CustomBuild>
+		<CustomBuild Include="..\qt\sc_Workaround.hpp">
+			<AdditionalInputs>$(QTDIR)\bin\moc.exe</AdditionalInputs>
+			<Message>Moc%27ing %(Identity)... ( with $(QTDIR)\bin\moc.exe )</Message>
+			<Command>"$(QTDIR)\bin\moc.exe" $(MOC_DEFINES) -I"$(QTDIR)\include" -I"(SolutionDir)engine" -I"$(QTDIR)\mkspecs\default" "%(Identity)" -o "$(IntDir)moc_%(Filename).cpp" </Command>
+			<AdditionalInputs>Rem;..\qt\sc_Workaround.hpp;%(AdditionalInputs)</AdditionalInputs>
+			<Outputs>$(IntDir)\moc_%(Filename).cpp</Outputs>
+		</CustomBuild>
 		<CustomBuild Include="..\qt\sc_WelcomeTab.hpp">
 			<AdditionalInputs>$(QTDIR)\bin\moc.exe</AdditionalInputs>
 			<Message>Moc%27ing %(Identity)... ( with $(QTDIR)\bin\moc.exe )</Message>
@@ -256,6 +278,13 @@ To change the list of source files, update the QT_ files and run synchronize.py
 			<Message>Moc%27ing %(Identity)... ( with $(QTDIR)\bin\moc.exe )</Message>
 			<Command>"$(QTDIR)\bin\moc.exe" $(MOC_DEFINES) -I"$(QTDIR)\include" -I"(SolutionDir)engine" -I"$(QTDIR)\mkspecs\default" "%(Identity)" -o "$(IntDir)moc_%(Filename).cpp" </Command>
 			<AdditionalInputs>Rem;..\qt\sc_AutomationTab.hpp;%(AdditionalInputs)</AdditionalInputs>
+			<Outputs>$(IntDir)\moc_%(Filename).cpp</Outputs>
+		</CustomBuild>
+		<CustomBuild Include="..\qt\sc_AddonImportTab.hpp">
+			<AdditionalInputs>$(QTDIR)\bin\moc.exe</AdditionalInputs>
+			<Message>Moc%27ing %(Identity)... ( with $(QTDIR)\bin\moc.exe )</Message>
+			<Command>"$(QTDIR)\bin\moc.exe" $(MOC_DEFINES) -I"$(QTDIR)\include" -I"(SolutionDir)engine" -I"$(QTDIR)\mkspecs\default" "%(Identity)" -o "$(IntDir)moc_%(Filename).cpp" </Command>
+			<AdditionalInputs>Rem;..\qt\sc_AddonImportTab.hpp;%(AdditionalInputs)</AdditionalInputs>
 			<Outputs>$(IntDir)\moc_%(Filename).cpp</Outputs>
 		</CustomBuild>
 	</ItemGroup>

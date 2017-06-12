@@ -1,41 +1,54 @@
-# T19H
-# Tier 19 Heroic
-# * Ilvl Cap: 865
-# * Artifact Rank Cap: 26
-# * 3 Relics with max ilevel of 865
-# * Mythic+ gear is permitted up to the item level cap.
-# * No items from Nighthold (including set bonuses)
-# * No Legendaries
-# * No Random Gems (ie. Bonus RNG Gem Slots)
-# * No Tertiary Stats
-# * No Ranked Gear (ie. Warforged/Titanforged)
-# * No Hardcoded Stats (generally if an item gives wrong stats: either bonus_id is wrong, either the item no longer exists in-game)
-# * It is recommended to use enchant name (ex : ",enchant=binding_of_mastery") rather than id/hardcoded stats.
+shaman="Shaman_Enhancement_T19H"
+level=110
+race=troll
+role=attack
+position=back
+talents=2002222
+artifact=41:0:0:0:0:899:1:900:1:901:1:902:1:903:1:904:1:905:3:906:3:907:3:908:3:909:3:910:3:911:3:912:3:913:3:930:1:1351:1:1388:1
+spec=enhancement
+
+head=collar_of_honorable_exultation,id=136777,bonus_id=1727/1517
+neck=wolfstride_pendant,id=133633,bonus_id=1727/1517,enchant=mark_of_the_hidden_satyr
+shoulders=epaulets_of_deceitful_intent,id=134480,bonus_id=1727/1517
+back=cape_of_rigid_order,id=134402,bonus_id=1727/1517,enchant=binding_of_agility
+chest=thunderfused_valkyr_hauberk,id=133622,bonus_id=1727/1517
+wrists=remorseless_chain_armbands,id=137405,bonus_id=1727/1517
+hands=lavabreaker_gauntlets,id=137519,bonus_id=1727/1517
+waist=creeping_string_of_larva,id=139212,bonus_id=1805
+legs=mute_erasure_legguards,id=134475,bonus_id=1727/1517
+feet=whelp_handlers_lined_boots,id=134464,bonus_id=1727/1517
+finger1=grasping_tentacle_loop,id=133634,bonus_id=1727/1517,enchant=binding_of_mastery
+finger2=archdruids_tainted_seal,id=134487,bonus_id=1727/1517,enchant=binding_of_mastery
+trinket1=bloodthirsty_instinct,id=139329,bonus_id=1805
+trinket2=spontaneous_appendages,id=139325,bonus_id=1805
+main_hand=doomhammer,id=128819,bonus_id=741,gem_id=137316/137408/133682,relic_id=1517:1727/1517:1727/1517:1727
+off_hand=fury_of_the_stonemother,id=128873
+save=Shaman_Enhancement_T19H.simc
 
 shaman="Shaman_Elemental_T19H"
 level=110
 race=orc
 role=spell
 position=ranged_back
-talents=3112211
-artifact=40:139262:139259:139262:0:291:1:294:1:295:1:296:1:297:1:298:3:299:3:300:6:301:3:302:3:303:3:306:3:1350:1
+talents=2112333
+artifact=40:0:0:0:0:291:1:292:1:293:1:294:1:295:1:296:1:297:1:298:3:299:3:300:3:301:3:302:3:303:3:304:3:305:3:306:3:1350:1:1387:1
 spec=elemental
 
-head=greyed_dragonscale_coif,id=139214,bonus_id=1805
+head=shadow_archers_helm,id=139244,bonus_id=1727/1517
 neck=blackened_portalstone_necklace,id=139332,bonus_id=1805,enchant=mark_of_the_hidden_satyr
-shoulders=matted_fur_pauldrons,id=139217,bonus_id=1805
-back=evergreen_vinewrap_drape,id=139248,bonus_id=1805,enchant=binding_of_intellect
-chest=patient_ambushers_hauberk,id=139221,bonus_id=1805
-wrists=manacles_of_the_nightmare_colossus,id=139222,bonus_id=1805
-hands=gauntlets_of_malevolent_intent,id=139213,bonus_id=1805
-waist=laughing_sisters_pouch-chain,id=139211,bonus_id=1805
+shoulders=epaulets_of_deceitful_intent,id=134480,bonus_id=1727/1517
+back=cloak_of_fading_echoes,id=134405,bonus_id=1727/1517,enchant=binding_of_intellect
+chest=tunic_of_screaming_earth,id=137354,bonus_id=1727/1517
+wrists=remorseless_chain_armbands,id=137405,bonus_id=1727/1517
+hands=nether_mindsnappers,id=134467,bonus_id=1727/1517
+waist=permafrost_waistband,id=137520,bonus_id=1727/1517
 legs=disjointed_linkage_leggings,id=139216,bonus_id=1805
-feet=black_venom_sabatons,id=139219,bonus_id=1805
-finger1=twice-warped_azsharan_signet,id=139238,bonus_id=1805,enchant_id=5427
-finger2=grubby_silver_ring,id=139236,bonus_id=1805,enchant_id=5427
-trinket1=swarming_plaguehive,id=139321,bonus_id=1805
-trinket2=twisting_wind,id=139323,bonus_id=1805
-main_hand=the_fist_of_raden,id=128935,bonus_id=744,gem_id=139262/139259/139262,relic_id=1805/1805/1805
+feet=striders_of_furious_flight,id=137517,bonus_id=1727/1517
+finger1=band_of_callous_dominance,id=134528,bonus_id=1727/1517,enchant_id=5427
+finger2=seal_of_the_nazjatar_empire,id=134525,bonus_id=1727/1517,enchant_id=5427
+trinket1=oakhearts_gnarled_root,id=137306,bonus_id=1727/1517
+trinket2=naraxas_spiked_tongue,id=137349,bonus_id=1727/1517
+main_hand=the_fist_of_raden,id=128935,bonus_id=744,gem_id=137365/137272/137365,relic_id=1517:1727/1517:1727/1517:1727
 off_hand=the_highkeepers_ward,id=128936
 save=Shaman_Elemental_T19H.simc
 

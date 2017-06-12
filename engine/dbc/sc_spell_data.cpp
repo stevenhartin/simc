@@ -81,6 +81,7 @@ const sdata_field_t _spell_data_fields[] =
   { SD_TYPE_DOUBLE,   "max_range",         O_SD( _max_range )              },
   { SD_TYPE_UNSIGNED, "cooldown",          O_SD( _cooldown )               },
   { SD_TYPE_UNSIGNED, "gcd",               O_SD( _gcd )                    },
+  { SD_TYPE_UNSIGNED, "category_cooldown", O_SD( _category_cooldown )      },
   { SD_TYPE_UNSIGNED, "charges",           O_SD( _charges )                },
   { SD_TYPE_UNSIGNED, "charge_cooldown",   O_SD( _charge_cooldown )        },
   { SD_TYPE_UNSIGNED, "category",          O_SD( _category )               },
@@ -169,7 +170,6 @@ const struct expr_data_map_t
   { "race_spell", DATA_RACIAL_SPELL },
   { "mastery", DATA_MASTERY_SPELL },
   { "spec_spell", DATA_SPECIALIZATION_SPELL },
-  { "glyph", DATA_GLYPH_SPELL },
   { "artifact", DATA_ARTIFACT_SPELL },
 };
 
@@ -365,23 +365,6 @@ struct spell_list_expr_t : public spell_data_expr_t
         }
         break;
       }
-      case DATA_GLYPH_SPELL:
-      {
-        for ( unsigned cls = 0; cls < sim -> dbc.specialization_max_class(); cls++ )
-        {
-          for ( unsigned type = 0; type < GLYPH_MAX; type++ )
-          {
-            for ( unsigned n = 0; n < sim -> dbc.glyph_spell_size(); n++ )
-            {
-              if ( ! ( spell_id = sim -> dbc.glyph_spell( cls, type, n ) ) )
-                continue;
-
-              result_spell_list.push_back( spell_id );
-            }
-          }
-        }
-        break;
-      }
       case DATA_ARTIFACT_SPELL:
       {
         for ( auto rank: sim -> dbc.artifact_power_ranks( 0 ) )
@@ -541,7 +524,7 @@ struct spell_data_filter_expr_t : public spell_list_expr_t
     {
       if ( util::str_compare_ci( f_name, fields[ i ].name ) )
       {
-        offset = fields[ i ].offset;
+        offset = static_cast<int>( fields[ i ].offset );
         field_type = fields[ i ].type;
         break;
       }

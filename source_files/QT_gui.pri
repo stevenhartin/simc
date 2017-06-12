@@ -12,6 +12,7 @@
  HEADERS += qt/simulationcraftqt.hpp
  HEADERS += qt/sc_importWindow.hpp
  HEADERS += qt/sc_importWidget.hpp
+ HEADERS += qt/sc_Workaround.hpp
  HEADERS += qt/sc_WelcomeTab.hpp
  HEADERS += qt/sc_SpellQueryTab.hpp
  HEADERS += qt/sc_SimulationThread.hpp
@@ -19,6 +20,7 @@
  HEADERS += qt/sc_SampleProfilesTab.hpp
  HEADERS += qt/sc_OptionsTab.hpp
  HEADERS += qt/sc_AutomationTab.hpp
+ HEADERS += qt/sc_AddonImportTab.hpp
  SOURCES += qt/util/sc_textedit.cpp
  SOURCES += qt/util/sc_tabbar.cpp
  SOURCES += qt/util/sc_searchbox.cpp
@@ -28,6 +30,7 @@
  SOURCES += qt/sc_window.cpp
  SOURCES += qt/sc_importWindow.cpp
  SOURCES += qt/sc_importWidget.cpp
+ SOURCES += qt/sc_Workaround.cpp
  SOURCES += qt/sc_WelcomeTab.cpp
  SOURCES += qt/sc_SpellQueryTab.cpp
  SOURCES += qt/sc_SimulationThread.cpp
@@ -35,5 +38,7 @@
  SOURCES += qt/sc_SampleProfilesTab.cpp
  SOURCES += qt/sc_OptionsTab.cpp
  SOURCES += qt/sc_ImportThread.cpp
+ SOURCES += qt/sc_ImportTab.cpp
  SOURCES += qt/sc_AutomationTab.cpp
+ SOURCES += qt/sc_AddonImportTab.cpp
  SOURCES += qt/main.cpp

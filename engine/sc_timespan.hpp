@@ -37,8 +37,7 @@ namespace timespan_adl_barrier
   class timespan_t
   {
   private:
-    // CAREFUL: Using int32_t implies that no overflowing happens during calculation.
-    typedef int64_t time_t;
+    using time_t = int_least64_t;
 
     static time_t native_to_milli(time_t t)
     {
@@ -78,10 +77,8 @@ namespace timespan_adl_barrier
     }
 
   public:
-    timespan_t() :
-        time()
-    {
-    }
+    timespan_t() : time( 0 )
+    { }
 
     double total_minutes() const
     {
@@ -97,21 +94,21 @@ namespace timespan_adl_barrier
     }
 
     template<typename Rep>
-    static typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_millis(
+    static typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_millis(
         Rep millis)
     {
       return timespan_t(milli_to_native(millis));
     }
 
     template<typename Rep>
-    static typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_seconds(
+    static typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_seconds(
         Rep seconds)
     {
       return timespan_t(second_to_native(seconds));
     }
 
     template<typename Rep>
-    static typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_minutes(
+    static typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type from_minutes(
         Rep minutes)
     {
       return timespan_t(minute_to_native(minutes));
@@ -165,7 +162,7 @@ namespace timespan_adl_barrier
     }
 
     template<typename Rep>
-    typename enable_if<std::is_arithmetic<Rep>::value, timespan_t&>::type operator*=(
+    typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t&>::type operator*=(
         Rep right)
     {
       time = static_cast<time_t>(time * right);
@@ -173,7 +170,7 @@ namespace timespan_adl_barrier
     }
 
     template<typename Rep>
-    typename enable_if<std::is_arithmetic<Rep>::value, timespan_t&>::type operator/=(
+    typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t&>::type operator/=(
         Rep right)
     {
       time = static_cast<time_t>(time / right);
@@ -204,21 +201,21 @@ namespace timespan_adl_barrier
     }
 
     template<typename Rep>
-    friend typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator*(
+    friend typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator*(
         timespan_t left, Rep right)
     {
       return timespan_t(left.time * right);
     }
 
     template<typename Rep>
-    friend typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator*(
+    friend typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator*(
         Rep left, timespan_t right)
     {
       return timespan_t(left * right.time);
     }
 
     template<typename Rep>
-    friend typename enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator/(
+    friend typename std::enable_if<std::is_arithmetic<Rep>::value, timespan_t>::type operator/(
         timespan_t left, Rep right)
     {
       return timespan_t(left.time / right);

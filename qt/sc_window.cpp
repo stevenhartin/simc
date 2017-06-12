@@ -12,6 +12,7 @@
 #include "sc_SimulateTab.hpp"
 #include "sc_AutomationTab.hpp"
 #include "sc_WelcomeTab.hpp"
+#include "sc_AddonImportTab.hpp"
 #include "util/sc_mainwindowcommandline.hpp"
 #ifdef SC_PAPERDOLL
 #include "sc_PaperDoll.hpp"
@@ -22,7 +23,7 @@
 #include <QStandardPaths>
 #include <QDateTime>
 
-static int SC_GUI_HISTORY_VERSION = 704;
+static int SC_GUI_HISTORY_VERSION = 715;
 
 namespace { // UNNAMED NAMESPACE
 
@@ -61,6 +62,9 @@ QString SC_PATHS::getDataPath()
 #elif defined( Q_OS_MAC )
     return QCoreApplication::applicationDirPath() + "/../Resources";
 #else
+  #if !defined( SC_TO_INSTALL )
+    return QCoreApplication::applicationDirPath();
+  #else
     QString shared_path;
     QStringList appdatalocation =  QStandardPaths::standardLocations( QStandardPaths::DataLocation );
     for( int i = 0; i < appdatalocation.size(); ++i )
@@ -73,6 +77,7 @@ QString SC_PATHS::getDataPath()
         }
     }
     return shared_path;
+  #endif
 #endif
 }
 
@@ -390,7 +395,11 @@ void SC_MainWindow::createOptionsTab()
   mainTab -> addTab( optionsTab, tr( "Options" ) );
 
   connect( optionsTab, SIGNAL( armory_region_changed( const QString& ) ), this, SLOT( armoryRegionChanged( const QString& ) ) );
-  connect( optionsTab, SIGNAL( armory_region_changed( const QString& ) ), newBattleNetView -> widget(), SLOT( armoryRegionChanged( const QString& ) ) );
+  connect( optionsTab, SIGNAL( armory_region_changed( const QString& ) ),
+           newBattleNetView -> widget(), SLOT( armoryRegionChangedIn( const QString& ) ) );
+
+  connect( newBattleNetView -> widget(), SIGNAL( armoryRegionChangedOut( const QString& ) ),
+           optionsTab,                   SLOT( _armoryRegionChanged( const QString& ) ) );
 }
 
 void SC_MainWindow::createImportTab()
@@ -420,7 +429,7 @@ void SC_MainWindow::createImportTab()
   importTab -> addTab( recentlyClosedTabImport, tr( "Recently Closed" ) );
 
   importTab -> addTab( importTab -> automationTab, tr( "Automation" ) );
-
+  importTab -> addTab( importTab -> addonTab, tr("Simc Addon") );
   connect( historyList, SIGNAL( itemDoubleClicked( QListWidgetItem* ) ), this, SLOT( historyDoubleClicked( QListWidgetItem* ) ) );
   connect( importTab, SIGNAL( currentChanged( int ) ), this, SLOT( importTabChanged( int ) ) );
   connect( recentlyClosedTabImport, SIGNAL( restoreTab( QWidget*, const QString&, const QString&, const QIcon& ) ),
@@ -435,7 +444,7 @@ void SC_MainWindow::createCustomTab()
 {
   //In Dev - Character Retrieval Boxes & Buttons
   //In Dev - Load & Save Profile Buttons
-  //In Dev - Profiler Slots, Talent & Glyph Layout
+  //In Dev - Profiler Slots, Talent Layout
   QHBoxLayout* customLayout = new QHBoxLayout();
   QGroupBox* customGroupBox = new QGroupBox();
   customGroupBox -> setLayout( customLayout );
@@ -451,15 +460,10 @@ void SC_MainWindow::createCustomTab()
   customTalentsTab = new QWidget();
   customTalentsTab -> setObjectName( QString::fromUtf8( "customTalentsTab" ) );
   createCustomProfileDock -> addTab( customTalentsTab, QString() );
-  customGlyphsTab = new QWidget();
-  customGlyphsTab -> setObjectName( QString::fromUtf8( "customGlyphsTab" ) );
-  createCustomProfileDock -> addTab( customGlyphsTab, QString() );
   createCustomProfileDock -> setTabText( createCustomProfileDock -> indexOf( customGearTab ), tr( "Gear", "createCustomTab" ) );
   createCustomProfileDock -> setTabToolTip( createCustomProfileDock -> indexOf( customGearTab ), tr( "Customize Gear Setup", "createCustomTab" ) );
   createCustomProfileDock -> setTabText( createCustomProfileDock -> indexOf( customTalentsTab ), tr( "Talents", "createCustomTab" ) );
   createCustomProfileDock -> setTabToolTip( createCustomProfileDock -> indexOf( customTalentsTab ), tr( "Customize Talents", "createCustomTab" ) );
-  createCustomProfileDock -> setTabText( createCustomProfileDock -> indexOf( customGlyphsTab ), tr( "Glyphs", "createCustomTab" ) );
-  createCustomProfileDock -> setTabToolTip( createCustomProfileDock -> indexOf( customGlyphsTab ), tr( "Customize Glyphs", "createCustomTab" ) );
 }
 
 void SC_MainWindow::createSimulateTab()
@@ -855,7 +859,7 @@ void SC_MainWindow::startSim()
   sim -> output_file_str = (reportFileBase + ".txt").toStdString();
   sim -> html_file_str = (reportFileBase + ".html").toStdString();
 
-  sim -> xml_file_str = (reportFileBase + ".xml").toStdString();
+  //sim -> xml_file_str = (reportFileBase + ".xml").toStdString();
   sim -> reforge_plot_output_file_str = (reportFileBase + "_plotdata.csv").toStdString();
 
   if ( optionsTab -> get_api_key().size() == 32 ) // api keys are 32 characters long, it's not worth parsing <32 character keys.
@@ -1377,6 +1381,13 @@ void SC_MainWindow::importButtonClicked()
       mainTab -> setCurrentTab( TAB_SIMULATE );
   }
       break;
+  case TAB_ADDON:
+  {
+      QString profile = importTab -> addonTab -> toPlainText();
+      simulateTab -> add_Text( profile,  tr( "SimC Addon Import" ) );
+      mainTab -> setCurrentTab( TAB_SIMULATE );
+  }
+      break;
   default: break;
   }
 }
@@ -1486,6 +1497,7 @@ void SC_MainWindow::importTabChanged( int index )
        index == TAB_HISTORY ||
        index == TAB_AUTOMATION ||
        index == TAB_RECENT ||
+       index == TAB_ADDON ||
        index == TAB_IMPORT_NEW )
   {
     cmdLine -> setTab( static_cast<import_tabs_e>( index ) );

@@ -3,9 +3,9 @@
 // Send questions to natehieter@gmail.com
 // ==========================================================================
 
-#include "simulationcraft.hpp"
 #include "sc_report.hpp"
 #include "sc_highchart.hpp"
+#include "simulationcraft.hpp"
 
 namespace
 {  // UNNAMED NAMESPACE ==========================================
@@ -24,6 +24,12 @@ bool has_avoidance( const std::array<stats_t::stats_results_t, RESULT_MAX>& s )
            s[ RESULT_PARRY ].count.mean() ) > 0;
 }
 
+bool has_avoidance( const std::array<stats_t::stats_results_t, FULLTYPE_MAX>& s )
+{
+  return ( s[ FULLTYPE_MISS ].count.mean() + s[ FULLTYPE_DODGE ].count.mean() +
+           s[ FULLTYPE_PARRY ].count.mean() ) > 0;
+}
+
 bool has_block( const std::array<stats_t::stats_results_t, FULLTYPE_MAX>& s )
 {
   return ( s[ FULLTYPE_HIT_BLOCK ].count.mean() +
@@ -32,6 +38,13 @@ bool has_block( const std::array<stats_t::stats_results_t, FULLTYPE_MAX>& s )
            s[ FULLTYPE_GLANCE_CRITBLOCK ].count.mean() +
            s[ FULLTYPE_CRIT_BLOCK ].count.mean() +
            s[ FULLTYPE_CRIT_CRITBLOCK ].count.mean() ) > 0;
+}
+
+bool has_glance( const std::array<stats_t::stats_results_t, FULLTYPE_MAX>& s )
+{
+  return s[ FULLTYPE_GLANCE ].count.mean() > 0 ||
+         s[ FULLTYPE_GLANCE_BLOCK ].count.mean() > 0 ||
+         s[ FULLTYPE_GLANCE_CRITBLOCK ].count.mean() > 0;
 }
 
 bool player_has_tick_results( const player_t& p, unsigned stats_mask )
@@ -84,8 +97,7 @@ bool player_has_block( const player_t& p, unsigned stats_mask )
     if ( !( stats_mask & ( 1 << stat->type ) ) )
       continue;
 
-    if ( has_block( stat->direct_results_detail ) ||
-         has_block( stat->tick_results_detail ) )
+    if ( has_block( stat->direct_results ) )
       return true;
   }
 
@@ -105,7 +117,7 @@ bool player_has_glance( const player_t& p, unsigned stats_mask )
     if ( !( stats_mask & ( 1 << stat->type ) ) )
       continue;
 
-    if ( stat->direct_results[ RESULT_GLANCE ].count.mean() > 0 )
+    if ( has_glance( stat -> direct_results ) )
       return true;
   }
 
@@ -126,8 +138,9 @@ std::string output_action_name( const stats_t& s, const player_t* actor )
 
   if ( s.player->sim->report_details )
   {
-    class_attr = " id=\"actor" + util::to_string( s.player -> index ) + "_" + s.name_str +
-                 "_" + stats_type + "_toggle\" class=\"toggle-details\"";
+    class_attr = " id=\"actor" + util::to_string( s.player->index ) + "_" +
+                 s.name_str + "_" + stats_type +
+                 "_toggle\" class=\"toggle-details\"";
   }
 
   for ( const auto& action : s.action_list )
@@ -139,7 +152,7 @@ std::string output_action_name( const stats_t& s, const player_t* actor )
   std::string name;
   if ( a )
   {
-    name = report::decorated_action_name( a, s.name_str );
+    name = report::action_decorator_t( a ).decorate();
   }
   else
   {
@@ -156,8 +169,8 @@ std::string output_action_name( const stats_t& s, const player_t* actor )
 
 // print_html_action_info =================================================
 
-double mean_damage(
-    const std::array<stats_t::stats_results_t, RESULT_MAX>& result )
+template <typename T>
+double mean_damage( const T& result )
 {
   double mean  = 0;
   size_t count = 0;
@@ -174,64 +187,124 @@ double mean_damage(
   return mean;
 }
 
+template <typename T, typename V>
+double mean_value( const T& results, const std::initializer_list<V>& selectors )
+{
+  double sum = 0, count = 0;
+
+  range::for_each( selectors, [ & ]( const V& selector ) {
+    auto idx = static_cast<int>( selector );
+    if ( idx < 0 )
+    {
+      return;
+    }
+
+    if ( results.size() < as<size_t>( idx ) )
+    {
+      return;
+    }
+
+    count += results[ idx ].actual_amount.count();
+    sum   += results[ idx ].actual_amount.sum();
+  } );
+
+  return count > 0 ? sum / count : 0;
+}
+
+template <typename T, typename V>
+double pct_value( const T& results, const std::initializer_list<V>& selectors )
+{
+  double sum = 0;
+
+  range::for_each( selectors, [ & ]( const V& selector ) {
+    auto idx = static_cast<int>( selector );
+    if ( idx < 0 )
+    {
+      return;
+    }
+
+    if ( results.size() < as<size_t>( idx ) )
+    {
+      return;
+    }
+
+    sum += results[ idx ].pct;
+  } );
+
+  return sum;
+}
+
 void print_html_action_summary( report::sc_html_stream& os, unsigned stats_mask,
                                 int result_type, const stats_t& s,
                                 const player_t& p )
 {
+  using full_result_t = std::array<stats_t::stats_results_t, FULLTYPE_MAX>;
+  using result_t = std::array<stats_t::stats_results_t, RESULT_MAX>;
+
   std::string type_str;
   if ( result_type == 1 )
     type_str = "Periodic";
   else
     type_str = "Direct";
 
-  const auto& results = result_type == 1 ? s.tick_results : s.direct_results;
-  const auto& block_results =
-      result_type == 1 ? s.tick_results_detail : s.direct_results_detail;
+  const auto& dr = s.direct_results;
+  const auto& tr = s.tick_results;
 
   // Result type
   os.format( "<td class=\"right small\">%s</td>\n", type_str.c_str() );
 
-  // Count
-  double count = ( result_type == 1 ) ? s.num_tick_results.mean()
-                                      : s.num_direct_results.mean();
-
-  os.format( "<td class=\"right small\">%.1f</td>\n", count );
+  os.format( "<td class=\"right small\">%.1f</td>\n",
+             result_type == 1
+             ? s.num_tick_results.mean()
+             : s.num_direct_results.mean() );
 
   // Hit results
   os.format( "<td class=\"right small\">%.0f</td>\n",
-             results[ RESULT_HIT ].actual_amount.pretty_mean() );
+             result_type == 1
+             ? mean_value<result_t, result_e>( tr, { RESULT_HIT } )
+             : mean_value<full_result_t, full_result_e>( dr, { FULLTYPE_HIT, FULLTYPE_HIT_BLOCK, FULLTYPE_HIT_CRITBLOCK } ) );
 
   // Crit results
   os.format( "<td class=\"right small\">%.0f</td>\n",
-             results[ RESULT_CRIT ].actual_amount.pretty_mean() );
+             result_type == 1
+             ? mean_value<result_t, result_e>( tr, { RESULT_CRIT } )
+             : mean_value<full_result_t, full_result_e>( dr, { FULLTYPE_CRIT, FULLTYPE_CRIT_BLOCK, FULLTYPE_CRIT_CRITBLOCK } ) );
 
   // Mean amount
-  os.format( "<td class=\"right small\">%.0f</td>\n", mean_damage( results ) );
+  os.format( "<td class=\"right small\">%.0f</td>\n",
+             result_type == 1
+             ? mean_damage( tr )
+             : mean_damage( dr ) );
 
   // Crit%
   os.format( "<td class=\"right small\">%.1f%%</td>\n",
-             results[ RESULT_CRIT ].pct );
+             result_type == 1
+             ? pct_value<result_t, result_e>( tr, { RESULT_CRIT } )
+             : pct_value<full_result_t, full_result_e>( dr, { FULLTYPE_CRIT, FULLTYPE_CRIT_BLOCK, FULLTYPE_CRIT_CRITBLOCK } ) );
 
   if ( player_has_avoidance( p, stats_mask ) )
-    os.format(
-        "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Avoid%
-        results[ RESULT_MISS ].pct + results[ RESULT_DODGE ].pct +
-            results[ RESULT_PARRY ].pct );
+    os.format( "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Avoid%
+               result_type == 1
+               ? pct_value<result_t, result_e>( tr, { RESULT_MISS, RESULT_DODGE, RESULT_PARRY } )
+               : pct_value<full_result_t, full_result_e>( dr, { FULLTYPE_MISS, FULLTYPE_DODGE, FULLTYPE_PARRY } ) );
 
   if ( player_has_glance( p, stats_mask ) )
-    os.format(
-        "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Glance%
-        results[ RESULT_GLANCE ].pct );
+    os.format( "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Glance%
+             result_type == 1
+             ? pct_value<result_t, result_e>( tr, { RESULT_GLANCE } )
+             : pct_value<full_result_t, full_result_e>( dr, { FULLTYPE_GLANCE, FULLTYPE_GLANCE_BLOCK, FULLTYPE_GLANCE_CRITBLOCK } ) );
 
   if ( player_has_block( p, stats_mask ) )
-    os.format(
-        "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Block%
-        block_results[ FULLTYPE_HIT_BLOCK ].pct +
-            block_results[ FULLTYPE_HIT_CRITBLOCK ].pct +
-            block_results[ FULLTYPE_GLANCE_BLOCK ].pct +
-            block_results[ FULLTYPE_GLANCE_CRITBLOCK ].pct +
-            block_results[ FULLTYPE_CRIT_BLOCK ].pct +
-            block_results[ FULLTYPE_CRIT_CRITBLOCK ].pct );
+    os.format( "<td class=\"right small\">%.1f%%</td>\n",  // direct_results Block%
+        result_type == 1
+        ? 0
+        : pct_value<full_result_t, full_result_e>( dr,
+          { FULLTYPE_HIT_BLOCK,
+            FULLTYPE_HIT_CRITBLOCK,
+            FULLTYPE_GLANCE_BLOCK,
+            FULLTYPE_GLANCE_CRITBLOCK,
+            FULLTYPE_CRIT_BLOCK,
+            FULLTYPE_CRIT_CRITBLOCK } ) );
 
   if ( player_has_tick_results( p, stats_mask ) )
   {
@@ -425,7 +498,7 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
         os << "<tr>\n"
            << "<th><a href=\"#help-scale-factors\" class=\"help\">?</a></th>\n";
         for ( stat_e i = STAT_NONE; i < STAT_MAX; i++ )
-          if ( p.scales_with[ i ] )
+          if ( p.scaling->scales_with[ i ] )
           {
             os.format( "<th>%s</th>\n", util::stat_type_abbrev( i ) );
             colspan++;
@@ -439,7 +512,7 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
         os << "<tr>\n"
            << "<th class=\"left\">Scale Factors</th>\n";
         for ( stat_e i = STAT_NONE; i < STAT_MAX; i++ )
-          if ( p.scales_with[ i ] )
+          if ( p.scaling->scales_with[ i ] )
           {
             if ( s.scaling->value.get_stat( i ) > 1.0e5 )
               os.format( "<td>%.*e</td>\n", p.sim->report_precision,
@@ -453,7 +526,7 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
            << "<th class=\"left\">Scale Deltas</th>\n";
         for ( stat_e i = STAT_NONE; i < STAT_MAX; i++ )
         {
-          if ( !p.scales_with[ i ] )
+          if ( !p.scaling->scales_with[ i ] )
             continue;
 
           double value = p.sim->scaling->stats.get_stat( i );
@@ -471,10 +544,10 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
         os << "<tr>\n"
            << "<th class=\"left\">Error</th>\n";
         for ( stat_e i = STAT_NONE; i < STAT_MAX; i++ )
-          if ( p.scales_with[ i ] )
+          if ( p.scaling->scales_with[ i ] )
           {
             scale_metric_e sm = p.sim->scaling->scaling_metric;
-            if ( p.scaling_error[ sm ].get_stat( i ) > 1.0e5 )
+            if ( p.scaling->scaling_error[ sm ].get_stat( i ) > 1.0e5 )
               os.format( "<td>%.*e</td>\n", p.sim->report_precision,
                          s.scaling->error.get_stat( i ) );
             else
@@ -513,92 +586,46 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
          << "<th class=\"small\">Overkill %</th>\n"
          << "</tr>\n";
       int k = 0;
-      if ( has_block( s.direct_results_detail ) )
+      for ( full_result_e i = FULLTYPE_MAX; --i >= FULLTYPE_NONE; )
       {
-        for ( full_result_e i = FULLTYPE_MAX; --i >= FULLTYPE_NONE; )
+        if ( ! s.direct_results[ i ].count.mean() )
+          continue;
+
+        os << "<tr";
+
+        if ( k & 1 )
         {
-          if ( !s.direct_results_detail[ i ].count.mean() )
-            continue;
-
-          os << "<tr";
-
-          if ( k & 1 )
-          {
-            os << " class=\"odd\"";
-          }
-          k++;
-          os << ">\n";
-
-          os.format(
-              "<td class=\"left small\">%s</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.2f%%</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "</tr>\n",
-              util::full_result_type_string( i ),
-              s.direct_results_detail[ i ].count.mean(),
-              s.direct_results_detail[ i ].pct,
-              s.direct_results_detail[ i ].actual_amount.mean(),
-              s.direct_results_detail[ i ].actual_amount.min(),
-              s.direct_results_detail[ i ].actual_amount.max(),
-              s.direct_results_detail[ i ].avg_actual_amount.mean(),
-              s.direct_results_detail[ i ].avg_actual_amount.min(),
-              s.direct_results_detail[ i ].avg_actual_amount.max(),
-              s.direct_results_detail[ i ].fight_actual_amount.mean(),
-              s.direct_results_detail[ i ].fight_total_amount.mean(),
-              s.direct_results_detail[ i ].overkill_pct.mean() );
+          os << " class=\"odd\"";
         }
-      }
-      else
-      {
-        for ( result_e i = RESULT_MAX; --i >= RESULT_NONE; )
-        {
-          if ( !s.direct_results[ i ].count.mean() )
-            continue;
+        k++;
+        os << ">\n";
 
-          os << "<tr";
-
-          if ( k & 1 )
-          {
-            os << " class=\"odd\"";
-          }
-          k++;
-          os << ">\n";
-
-          os.format(
-              "<td class=\"left small\">%s</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.2f%%</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "</tr>\n",
-              util::result_type_string( i ), s.direct_results[ i ].count.mean(),
-              s.direct_results[ i ].pct,
-              s.direct_results[ i ].actual_amount.mean(),
-              s.direct_results[ i ].actual_amount.min(),
-              s.direct_results[ i ].actual_amount.max(),
-              s.direct_results[ i ].avg_actual_amount.mean(),
-              s.direct_results[ i ].avg_actual_amount.min(),
-              s.direct_results[ i ].avg_actual_amount.max(),
-              s.direct_results[ i ].fight_actual_amount.mean(),
-              s.direct_results[ i ].fight_total_amount.mean(),
-              s.direct_results[ i ].overkill_pct.mean() );
-        }
+        os.format(
+            "<td class=\"left small\">%s</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "<td class=\"right small\">%.2f%%</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "</tr>\n",
+            util::full_result_type_string( i ),
+            s.direct_results[ i ].count.mean(),
+            s.direct_results[ i ].pct,
+            s.direct_results[ i ].actual_amount.mean(),
+            s.direct_results[ i ].actual_amount.min(),
+            s.direct_results[ i ].actual_amount.max(),
+            s.direct_results[ i ].avg_actual_amount.mean(),
+            s.direct_results[ i ].avg_actual_amount.min(),
+            s.direct_results[ i ].avg_actual_amount.max(),
+            s.direct_results[ i ].fight_actual_amount.mean(),
+            s.direct_results[ i ].fight_total_amount.mean(),
+            s.direct_results[ i ].overkill_pct.mean() );
       }
     }
 
@@ -627,87 +654,42 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
          << "<th class=\"small\">Overkill %</th>\n"
          << "</tr>\n";
       int k = 0;
-      if ( has_block( s.tick_results_detail ) )
+      for ( result_e i = RESULT_MAX; --i >= RESULT_NONE; )
       {
-        for ( full_result_e i = FULLTYPE_MAX; --i >= FULLTYPE_NONE; )
-        {
-          if ( !s.tick_results_detail[ i ].count.mean() )
-            continue;
+        if ( !s.tick_results[ i ].count.mean() )
+          continue;
 
-          os << "<tr";
-          if ( k & 1 )
-          {
-            os << " class=\"odd\"";
-          }
-          k++;
-          os << ">\n";
-          os.format(
-              "<td class=\"left small\">%s</td>\n"
-              "<td class=\"right small\">%.1f</td>\n"
-              "<td class=\"right small\">%.2f%%</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "</tr>\n",
-              util::full_result_type_string( i ),
-              s.tick_results_detail[ i ].count.mean(),
-              s.tick_results_detail[ i ].pct,
-              s.tick_results_detail[ i ].actual_amount.mean(),
-              s.tick_results_detail[ i ].actual_amount.min(),
-              s.tick_results_detail[ i ].actual_amount.max(),
-              s.tick_results_detail[ i ].avg_actual_amount.mean(),
-              s.tick_results_detail[ i ].avg_actual_amount.min(),
-              s.tick_results_detail[ i ].avg_actual_amount.max(),
-              s.tick_results_detail[ i ].fight_actual_amount.mean(),
-              s.tick_results_detail[ i ].fight_total_amount.mean(),
-              s.tick_results_detail[ i ].overkill_pct.mean() );
-        }
-      }
-      else
-      {
-        for ( result_e i = RESULT_MAX; --i >= RESULT_NONE; )
+        os << "<tr";
+        if ( k & 1 )
         {
-          if ( !s.tick_results[ i ].count.mean() )
-            continue;
-
-          os << "<tr";
-          if ( k & 1 )
-          {
-            os << " class=\"odd\"";
-          }
-          k++;
-          os << ">\n";
-          os.format(
-              "<td class=\"left small\">%s</td>\n"
-              "<td class=\"right small\">%.1f</td>\n"
-              "<td class=\"right small\">%.2f%%</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.0f</td>\n"
-              "<td class=\"right small\">%.2f</td>\n"
-              "</tr>\n",
-              util::result_type_string( i ), s.tick_results[ i ].count.mean(),
-              s.tick_results[ i ].pct, s.tick_results[ i ].actual_amount.mean(),
-              s.tick_results[ i ].actual_amount.min(),
-              s.tick_results[ i ].actual_amount.max(),
-              s.tick_results[ i ].avg_actual_amount.mean(),
-              s.tick_results[ i ].avg_actual_amount.min(),
-              s.tick_results[ i ].avg_actual_amount.max(),
-              s.tick_results[ i ].fight_actual_amount.mean(),
-              s.tick_results[ i ].fight_total_amount.mean(),
-              s.tick_results[ i ].overkill_pct.mean() );
+          os << " class=\"odd\"";
         }
+        k++;
+        os << ">\n";
+        os.format(
+            "<td class=\"left small\">%s</td>\n"
+            "<td class=\"right small\">%.1f</td>\n"
+            "<td class=\"right small\">%.2f%%</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.0f</td>\n"
+            "<td class=\"right small\">%.2f</td>\n"
+            "</tr>\n",
+            util::result_type_string( i ), s.tick_results[ i ].count.mean(),
+            s.tick_results[ i ].pct, s.tick_results[ i ].actual_amount.mean(),
+            s.tick_results[ i ].actual_amount.min(),
+            s.tick_results[ i ].actual_amount.max(),
+            s.tick_results[ i ].avg_actual_amount.mean(),
+            s.tick_results[ i ].avg_actual_amount.min(),
+            s.tick_results[ i ].avg_actual_amount.max(),
+            s.tick_results[ i ].fight_actual_amount.mean(),
+            s.tick_results[ i ].fight_total_amount.mean(),
+            s.tick_results[ i ].overkill_pct.mean() );
       }
     }
 
@@ -717,7 +699,7 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
 
     if ( s.has_direct_amount_results() || s.has_tick_amount_results() )
     {
-      highchart::time_series_t ts( highchart::build_id( s ), *s.player -> sim );
+      highchart::time_series_t ts( highchart::build_id( s ), *s.player->sim );
       chart::generate_stats_timeline( ts, s );
       os << ts.to_target_div();
       s.player->sim->add_chart_data( ts );
@@ -769,7 +751,7 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
           a->cooldown->duration.total_seconds(),
           a->base_execute_time.total_seconds(), a->base_crit,
           a->target ? a->target->name() : "", a->harmful ? "true" : "false",
-          util::encode_html( a->if_expr_str ).c_str() );
+          util::encode_html( a->option.if_expr_str ).c_str() );
 
       // Spelldata
       if ( a->data().ok() )
@@ -789,7 +771,8 @@ void print_html_action_info( report::sc_html_stream& os, unsigned stats_mask,
             "</div>\n",
             a->data().id(), a->data().name_cstr(),
             util::school_type_string( a->data().get_school_type() ),
-            report::pretty_spell_text( a->data(), a->data().tooltip(), p ).c_str(),
+            report::pretty_spell_text( a->data(), a->data().tooltip(), p )
+                .c_str(),
             util::encode_html(
                 report::pretty_spell_text( a->data(), a->data().desc(), p ) )
                 .c_str() );
@@ -938,7 +921,7 @@ void print_html_gear( report::sc_html_stream& os, const player_t& p )
         "</tr>\n",
         item.source_str.c_str(),
         util::inverse_tokenize( item.slot_name() ).c_str(),
-        report::decorated_item_name( &item ).c_str() );
+        report::item_decorator_t( item ).decorate().c_str() );
 
     std::string item_sim_desc =
         "ilevel: " + util::to_string( item.item_level() );
@@ -984,19 +967,20 @@ void print_html_gear( report::sc_html_stream& os, const player_t& p )
       item_sim_desc += ", enchant: " + item.parsed.encoded_enchant;
     }
 
-    auto has_relics = range::find_if( item.parsed.relic_bonus_ilevel, []( unsigned v ) { return v != 0; } );
+    auto has_relics = range::find_if( item.parsed.relic_bonus_ilevel,
+                                      []( unsigned v ) { return v != 0; } );
     if ( has_relics != item.parsed.relic_bonus_ilevel.end() )
     {
       item_sim_desc += ", relics: { ";
       auto first = true;
-      for ( auto bonus: item.parsed.relic_bonus_ilevel )
+      for ( auto bonus : item.parsed.relic_bonus_ilevel )
       {
         if ( bonus == 0 )
         {
           continue;
         }
 
-        if ( ! first )
+        if ( !first )
         {
           item_sim_desc += ", ";
         }
@@ -1048,16 +1032,18 @@ void print_html_stats( report::sc_html_stream& os, const player_t& p )
   const auto& buffed_stats = p.collected_data.buffed_stats_snapshot;
   std::array<double, ATTRIBUTE_MAX> hybrid_attributes;
   range::fill( hybrid_attributes, 0 );
-  const std::array<stat_e, 4> hybrid_stats = { { STAT_STR_AGI_INT, STAT_STR_AGI, STAT_STR_INT, STAT_AGI_INT } };
+  const std::array<stat_e, 4> hybrid_stats = {
+      {STAT_STR_AGI_INT, STAT_STR_AGI, STAT_STR_INT, STAT_AGI_INT}};
 
-  for ( const auto& item: p.items )
+  for ( const auto& item : p.items )
   {
     for ( auto hybrid_stat : hybrid_stats )
     {
-      auto real_stat = p.convert_hybrid_stat( hybrid_stat );
+      auto real_stat   = p.convert_hybrid_stat( hybrid_stat );
       attribute_e attr = static_cast<attribute_e>( real_stat );
 
-      if ( p.gear.attribute[ attr ] >= 0 || item.stats.get_stat( hybrid_stat ) <= 0 )
+      if ( p.gear.attribute[ attr ] >= 0 ||
+           item.stats.get_stat( hybrid_stat ) <= 0 )
       {
         continue;
       }
@@ -1145,7 +1131,8 @@ void print_html_stats( report::sc_html_stream& os, const player_t& p )
           "<td class=\"right\">%.0f</td>\n"
           "</tr>\n",
           ( j % 2 == 1 ) ? " class=\"odd\"" : "",
-          100 * buffed_stats.attack_crit_chance, 100 * p.composite_melee_crit_chance(),
+          100 * buffed_stats.attack_crit_chance,
+          100 * p.composite_melee_crit_chance(),
           p.composite_melee_crit_rating() );
       j++;
     }
@@ -1159,7 +1146,8 @@ void print_html_stats( report::sc_html_stream& os, const player_t& p )
           "<td class=\"right\">%.0f</td>\n"
           "</tr>\n",
           ( j % 2 == 1 ) ? " class=\"odd\"" : "",
-          100 * buffed_stats.attack_crit_chance, 100 * p.composite_melee_crit_chance(),
+          100 * buffed_stats.attack_crit_chance,
+          100 * p.composite_melee_crit_chance(),
           p.composite_melee_crit_rating() );
       j++;
       os.format(
@@ -1169,8 +1157,10 @@ void print_html_stats( report::sc_html_stream& os, const player_t& p )
           "<td class=\"right\">%.2f%%</td>\n"
           "<td class=\"right\">%.0f</td>\n"
           "</tr>\n",
-          ( j % 2 == 1 ) ? " class=\"odd\"" : "", 100 * buffed_stats.spell_crit_chance,
-          100 * p.composite_spell_crit_chance(), p.composite_spell_crit_rating() );
+          ( j % 2 == 1 ) ? " class=\"odd\"" : "",
+          100 * buffed_stats.spell_crit_chance,
+          100 * p.composite_spell_crit_chance(),
+          p.composite_spell_crit_rating() );
       j++;
     }
     if ( p.composite_melee_haste() == p.composite_spell_haste() )
@@ -1470,7 +1460,6 @@ void print_html_stats( report::sc_html_stream& os, const player_t& p )
   }
 }
 
-
 // print_html_talents_player ================================================
 
 void print_html_talents( report::sc_html_stream& os, const player_t& p )
@@ -1543,8 +1532,8 @@ void print_html_player_scale_factor_table(
     report::sc_html_stream& os, const sim_t&, const player_t& p,
     const player_processed_report_information_t& ri, scale_metric_e sm )
 {
-  int colspan = static_cast<int>( p.scaling_stats[ sm ].size() );
-  std::vector<stat_e> scaling_stats = p.scaling_stats[ sm ];
+  int colspan = static_cast<int>( p.scaling->scaling_stats[ sm ].size() );
+  std::vector<stat_e> scaling_stats = p.scaling->scaling_stats[ sm ];
 
   os << "<table class=\"sc mt\">\n";
 
@@ -1572,16 +1561,16 @@ void print_html_player_scale_factor_table(
 
   for ( const auto& stat : scaling_stats )
   {
-    if ( std::abs( p.scaling[ sm ].get_stat( stat ) ) > 1.0e5 )
+    if ( std::abs( p.scaling->scaling[ sm ].get_stat( stat ) ) > 1.0e5 )
       os.format( "<td>%.*e</td>\n", p.sim->report_precision,
-                 p.scaling[ sm ].get_stat( stat ) );
+                 p.scaling->scaling[ sm ].get_stat( stat ) );
     else
       os.format( "<td>%.*f</td>\n", p.sim->report_precision,
-                 p.scaling[ sm ].get_stat( stat ) );
+                 p.scaling->scaling[ sm ].get_stat( stat ) );
   }
   if ( p.sim->scaling->scale_lag )
     os.format( "<td>%.*f</td>\n", p.sim->report_precision,
-               p.scaling_lag[ sm ] );
+               p.scaling->scaling_lag[ sm ] );
   os << "</tr>\n";
   os << "<tr>\n"
      << "<th class=\"left\">Normalized</th>\n";
@@ -1589,7 +1578,7 @@ void print_html_player_scale_factor_table(
   for ( const auto& stat : scaling_stats )
   {
     os.format( "<td>%.*f</td>\n", p.sim->report_precision,
-               p.scaling_normalized[ sm ].get_stat( stat ) );
+               p.scaling->scaling_normalized[ sm ].get_stat( stat ) );
   }
   os << "</tr>\n";
   os << "<tr>\n"
@@ -1615,16 +1604,16 @@ void print_html_player_scale_factor_table(
      << "<th class=\"left\">Error</th>\n";
 
   for ( const auto& stat : scaling_stats )
-    if ( std::abs( p.scaling[ sm ].get_stat( stat ) ) > 1.0e5 )
+    if ( std::abs( p.scaling->scaling[ sm ].get_stat( stat ) ) > 1.0e5 )
       os.format( "<td>%.*e</td>\n", p.sim->report_precision,
-                 p.scaling_error[ sm ].get_stat( stat ) );
+                 p.scaling->scaling_error[ sm ].get_stat( stat ) );
     else
       os.format( "<td>%.*f</td>\n", p.sim->report_precision,
-                 p.scaling_error[ sm ].get_stat( stat ) );
+                 p.scaling->scaling_error[ sm ].get_stat( stat ) );
 
   if ( p.sim->scaling->scale_lag )
     os.format( "<td>%.*f</td>\n", p.sim->report_precision,
-               p.scaling_lag_error[ sm ] );
+               p.scaling->scaling_lag_error[ sm ] );
   os << "</tr>\n";
 
   os.format(
@@ -1677,14 +1666,14 @@ void print_html_player_scale_factor_table(
       // holy hell this was hard to read - splitting this out into
       // human-readable code
       double separation =
-          fabs( p.scaling[ sm ].get_stat( scaling_stats[ i - 1 ] ) -
-                p.scaling[ sm ].get_stat( scaling_stats[ i ] ) );
+          fabs( p.scaling->scaling[ sm ].get_stat( scaling_stats[ i - 1 ] ) -
+                p.scaling->scaling[ sm ].get_stat( scaling_stats[ i ] ) );
       double error_est = sqrt(
-          p.scaling_compare_error[ sm ].get_stat( scaling_stats[ i - 1 ] ) *
-              p.scaling_compare_error[ sm ].get_stat( scaling_stats[ i - 1 ] ) /
+          p.scaling->scaling_compare_error[ sm ].get_stat( scaling_stats[ i - 1 ] ) *
+              p.scaling->scaling_compare_error[ sm ].get_stat( scaling_stats[ i - 1 ] ) /
               4 +
-          p.scaling_compare_error[ sm ].get_stat( scaling_stats[ i ] ) *
-              p.scaling_compare_error[ sm ].get_stat( scaling_stats[ i ] ) /
+          p.scaling->scaling_compare_error[ sm ].get_stat( scaling_stats[ i ] ) *
+              p.scaling->scaling_compare_error[ sm ].get_stat( scaling_stats[ i ] ) /
               4 );
       if ( separation > ( error_est * 2 ) )
         os << " > ";
@@ -1748,26 +1737,26 @@ void print_html_player_scale_factors(
         // Scale factor warnings:
         if ( sim.scaling->scale_factor_noise > 0 &&
              sim.scaling->scale_factor_noise <
-                 p.scaling_lag_error[ default_sm ] /
-                     fabs( p.scaling_lag[ default_sm ] ) )
+                 p.scaling->scaling_lag_error[ default_sm ] /
+                     fabs( p.scaling->scaling_lag[ default_sm ] ) )
           os.format(
               "<p>Player may have insufficient iterations (%d) to calculate "
               "scale factor for lag (error is >%.0f%% delta score)</p>\n",
               sim.iterations, sim.scaling->scale_factor_noise * 100.0 );
-        for ( size_t i = 0; i < p.scaling_stats[ default_sm ].size(); i++ )
+        for ( size_t i = 0; i < p.scaling->scaling_stats[ default_sm ].size(); i++ )
         {
           scale_metric_e sm = sim.scaling->scaling_metric;
           double value =
-              p.scaling[ sm ].get_stat( p.scaling_stats[ default_sm ][ i ] );
-          double error = p.scaling_error[ sm ].get_stat(
-              p.scaling_stats[ default_sm ][ i ] );
+              p.scaling->scaling[ sm ].get_stat( p.scaling->scaling_stats[ default_sm ][ i ] );
+          double error = p.scaling->scaling_error[ sm ].get_stat(
+              p.scaling->scaling_stats[ default_sm ][ i ] );
           if ( sim.scaling->scale_factor_noise > 0 &&
                sim.scaling->scale_factor_noise < error / fabs( value ) )
             os.format(
                 "<p>Player may have insufficient iterations (%d) to calculate "
                 "scale factor for stat %s (error is >%.0f%% delta score)</p>\n",
                 sim.iterations,
-                util::stat_type_string( p.scaling_stats[ default_sm ][ i ] ),
+                util::stat_type_string( p.scaling->scaling_stats[ default_sm ][ i ] ),
                 sim.scaling->scale_factor_noise * 100.0 );
         }
         os << "</div>\n";
@@ -1881,13 +1870,20 @@ void print_html_sample_sequence_table_entry(
   {
     os.format(
         "<td class=\"left\">%s</td>\n"
+        "<td class=\"left\">%c</td>\n"
+        "<td class=\"left\">%s</td>\n"
         "<td class=\"left\">%s</td>\n",
-        data.action->name(), data.target->name() );
+        data.action->action_list ? data.action->action_list->name_str.c_str() : "default",
+        data.action->marker != 0 ? data.action->marker : ' ',
+        data.action->name(),
+        data.target->name() );
   }
   else
   {
     os.format(
         "<td class=\"left\">Waiting</td>\n"
+        "<td class=\"left\">&nbsp;</td>\n"
+        "<td class=\"left\">&nbsp;</td>\n"
         "<td class=\"left\">%.3f sec</td>\n",
         data.wait_time.total_seconds() );
   }
@@ -2037,12 +2033,15 @@ void print_html_player_action_priority_list( report::sc_html_stream& os,
 
   // Sample Sequences
 
-  if ( !p.collected_data.action_sequence.empty() )
+  if ( !p.collected_data.action_sequence.empty() && !p.is_enemy()  )
   {
     std::vector<std::string> targets;
 
     targets.push_back( "none" );
-    targets.push_back( p.target->name() );
+    if ( p.target )
+    {
+      targets.push_back( p.target->name() );
+    }
 
     for ( const auto& sequence_data : p.collected_data.action_sequence )
     {
@@ -2111,6 +2110,8 @@ void print_html_player_action_priority_list( report::sc_html_stream& os,
         "<table class=\"sc\">\n"
         "<tr>\n"
         "<th class=\"center\">time</th>\n"
+        "<th class=\"center\">list</th>\n"
+        "<th class=\"center\">#</th>\n"
         "<th class=\"center\">name</th>\n"
         "<th class=\"center\">target</th>\n"
         "<th class=\"center\">resources</th>\n"
@@ -2242,9 +2243,8 @@ void get_total_player_gains( const player_t& p,
 }
 // print_html_player_resources ==============================================
 
-void print_html_player_resources(
-    report::sc_html_stream& os, const player_t& p,
-    const player_processed_report_information_t& )
+void print_html_player_resources( report::sc_html_stream& os, const player_t& p,
+                                  const player_processed_report_information_t& )
 {
   // Resources Section
 
@@ -2378,8 +2378,9 @@ void print_html_player_resources(
   os << "<th>RPS-Loss</th>\n";
   os << "</tr>\n";
   int j = 0;
-  for ( resource_e rt = RESOURCE_NONE; rt < RESOURCE_MAX; ++rt )
+  for ( size_t i = 0, end = p.collected_data.resource_gained.size(); i < end; ++i )
   {
+    auto rt = static_cast<resource_e>( i );
     double rps_gain = p.collected_data.resource_gained[ rt ].mean() /
                       p.collected_data.fight_length.mean();
     double rps_loss = p.collected_data.resource_lost[ rt ].mean() /
@@ -2412,8 +2413,10 @@ void print_html_player_resources(
   os << "<th> Max </th>\n";
   os << "</tr>\n";
   j = 0;
-  for ( resource_e rt = RESOURCE_NONE; rt < RESOURCE_MAX; ++rt )
+  for ( size_t i = 0, end = p.collected_data.combat_end_resource.size(); i < end; ++i )
   {
+    auto rt = static_cast<resource_e>( i );
+
     if ( p.resources.base[ rt ] <= 0 )
       continue;
 
@@ -2643,7 +2646,8 @@ void print_html_player_charts( report::sc_html_stream& os, const player_t& p,
       p.scaling_for_metric( p.sim->scaling->scaling_metric );
   std::string scale_factor_id = "scale_factor_";
   scale_factor_id += util::scale_metric_type_abbrev( scaling_data.metric );
-  highchart::bar_chart_t bc( highchart::build_id( p, scale_factor_id ), *p.sim );
+  highchart::bar_chart_t bc( highchart::build_id( p, scale_factor_id ),
+                             *p.sim );
   if ( chart::generate_scale_factors( bc, p, scaling_data.metric ) )
   {
     os << bc.to_target_div();
@@ -2728,7 +2732,7 @@ void print_html_player_buff( report::sc_html_stream& os, const buff_t& b,
   os << ">\n";
   if ( report_details )
   {
-    buff_name = report::decorated_buff_name( &b );
+    buff_name = report::buff_decorator_t( b ).decorate();
     os.format(
         "<td class=\"left\"><span class=\"toggle-details\">%s</span></td>\n",
         buff_name.c_str() );
@@ -2839,14 +2843,14 @@ void print_html_player_buff( report::sc_html_stream& os, const buff_t& b,
           "</td>\n",
           b.data().id(), b.data().name_cstr(),
           b.player
-              ? util::encode_html( report::pretty_spell_text( b.data(),
-                                                      b.data().tooltip(),
-                                                      *b.player ) )
+              ? util::encode_html(
+                    report::pretty_spell_text( b.data(), b.data().tooltip(),
+                                               *b.player ) )
                     .c_str()
               : b.data().tooltip(),
           b.player
-              ? util::encode_html(
-                  report::pretty_spell_text( b.data(), b.data().desc(), *b.player ) )
+              ? util::encode_html( report::pretty_spell_text(
+                                       b.data(), b.data().desc(), *b.player ) )
                     .c_str()
               : b.data().desc(),
           b.data().max_stacks(), b.data().duration().total_seconds(),
@@ -2864,13 +2868,14 @@ void print_html_player_buff( report::sc_html_stream& os, const buff_t& b,
       buff_uptime.add_simple_series( "area", "#FF0000", "Uptime",
                                      b.uptime_array.data() );
       buff_uptime.set_mean( b.uptime_array.mean() );
-      if ( ! b.sim -> single_actor_batch )
+      if ( !b.sim->single_actor_batch )
       {
-        buff_uptime.set_xaxis_max( b.sim -> simulation_length.max() );
+        buff_uptime.set_xaxis_max( b.sim->simulation_length.max() );
       }
       else
       {
-        buff_uptime.set_xaxis_max( b.player -> collected_data.fight_length.max() );
+        buff_uptime.set_xaxis_max(
+            b.player->collected_data.fight_length.max() );
       }
 
       os << "<tr><td colspan=\"2\" class=\"filler\">\n";
@@ -3458,58 +3463,51 @@ void print_html_player_results_spec_gear( report::sc_html_stream& os,
 
     if ( p.artifact.n_points > 0 )
     {
-      os.format( "<tr class=\"left\">\n<th>Artifact</th>\n<td><ul class=\"float\">\n" );
-      os << "<li><a href=\"" << util::create_wowhead_artifact_url( p ) << "\" target=\"_blank\">Calculator (Wowhead.com)</a></li>";
-      os << "<li>Purchased points: " << +p.artifact.n_purchased_points << ", total " << +p.artifact.n_points << "</li>";
+      os.format(
+          "<tr class=\"left\">\n<th>Artifact</th>\n<td><ul "
+          "class=\"float\">\n" );
+      os << "<li><a href=\"" << util::create_wowhead_artifact_url( p )
+         << "\" target=\"_blank\">Calculator (Wowhead.com)</a></li>";
+      os << "<li>Purchased points: " << +p.artifact.n_purchased_points
+         << ", total " << +p.artifact.n_points << "</li>";
       os << "</ul></td></tr>";
       os.format( "<tr class=\"left\">\n<th></th><td><ul class=\"float\">\n" );
-      auto artifact_id = p.dbc.artifact_by_spec( p.specialization() );
+      auto artifact_id     = p.dbc.artifact_by_spec( p.specialization() );
       auto artifact_powers = p.dbc.artifact_powers( artifact_id );
       for ( size_t idx = 0; idx < artifact_powers.size(); ++idx )
       {
-        unsigned total_rank = p.artifact.points[ idx ].first + p.artifact.points[ idx ].second;
+        unsigned total_rank =
+            p.artifact.points[ idx ].first + p.artifact.points[ idx ].second;
         if ( total_rank == 0 )
         {
           continue;
         }
 
-        unsigned spell_id = p.dbc.artifact_power_spell_id( p.specialization(), ( unsigned ) idx, total_rank );
+        unsigned spell_id = p.dbc.artifact_power_spell_id(
+            p.specialization(), (unsigned)idx, total_rank );
         const spell_data_t* spell = p.dbc.spell( spell_id );
+        auto data = p.find_artifact_spell( spell -> name_cstr() );
 
         std::string rank_str;
         if ( p.artifact.points[ idx ].second > 0 )
         {
-          rank_str = util::to_string( +p.artifact.points[ idx ].first ) + " + " + util::to_string( +p.artifact.points[ idx ].second );
+          rank_str = util::to_string( +p.artifact.points[ idx ].first ) +
+                     " + " +
+                     util::to_string( +p.artifact.points[ idx ].second );
         }
         else
         {
           rank_str = util::to_string( +p.artifact.points[ idx ].first );
         }
-        os << "<li>" << ( spell ? report::decorated_spell_name( sim, *spell, "artifactRank=" + rank_str ) : artifact_powers[ idx ] -> name );
-        if ( artifact_powers[ idx ] -> max_rank > 1 )
+        os << "<li>" << ( spell ? report::spell_data_decorator_t( &p, data ).decorate()
+                                : artifact_powers[ idx ]->name );
+        if ( artifact_powers[ idx ]->max_rank > 1 )
         {
           os << " (Rank " << rank_str << ")";
         }
         os << "</li>";
       }
       os << "</ul></td></tr>";
-    }
-
-    // Glyphs
-    if ( !p.glyph_list.empty() )
-    {
-      os.format(
-          "<tr class=\"left\">\n"
-          "<th>Glyphs</th>\n"
-          "<td>\n"
-          "<ul class=\"float\">\n" );
-      for ( size_t i = 0; i < p.glyph_list.size(); ++i )
-      {
-        os << "<li>" << p.glyph_list[ i ]->name_cstr() << "</li>\n";
-      }
-      os << "</ul>\n"
-         << "</td>\n"
-         << "</tr>\n";
     }
 
     // Professions
@@ -3707,7 +3705,8 @@ void output_player_damage_summary( report::sc_html_stream& os,
 void output_player_heal_summary( report::sc_html_stream& os,
                                  const player_t& actor )
 {
-  if ( actor.collected_data.heal.max() == 0 && !actor.sim->debug && actor.collected_data.absorb.max() == 0 )
+  if ( actor.collected_data.heal.max() == 0 && !actor.sim->debug &&
+       actor.collected_data.absorb.max() == 0 )
     return;
 
   // Number of static columns in table
@@ -4012,7 +4011,7 @@ void print_html_player_procs( report::sc_html_stream& os,
   // Procs Section
   os << "<div class=\"player-section procs\">\n"
      << "<h3 class=\"toggle\">Procs</h3>\n"
-     << "<div class=\"toggle-content hide\">\n"
+     << "<div class=\"toggle-content open\">\n"
      << "<table class=\"sc\">\n"
      << "<tr>\n"
      << "<th></th>\n"
@@ -4135,13 +4134,13 @@ void print_html_player_( report::sc_html_stream& os, const player_t& p,
 
   print_html_player_buffs( os, p, p.report_information );
 
+  print_html_player_procs( os, p.proc_list );
+
   print_html_player_custom_section( os, p, p.report_information );
 
   print_html_player_resources( os, p, p.report_information );
 
   print_html_player_benefits_uptimes( os, p );
-
-  print_html_player_procs( os, p.proc_list );
 
   print_html_player_deaths( os, p, p.report_information );
 

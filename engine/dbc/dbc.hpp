@@ -91,9 +91,6 @@ const gem_property_data_t* gem_properties( bool ptr );
 specialization_e translate_spec_str   ( player_e ptype, const std::string& spec_str );
 std::string specialization_string     ( specialization_e spec );
 double fmt_value( double v, effect_type_t type, effect_subtype_t sub_type );
-const std::string& get_token( unsigned int id_spell );
-bool add_token( unsigned int id_spell, const std::string& token_name, bool ptr );
-unsigned int get_token_id( const std::string& token );
 bool valid_gem_color( unsigned color );
 
 const char* item_name_description( unsigned, bool ptr );
@@ -107,6 +104,9 @@ std::string bonus_ids_str( dbc_t& );
 
 // Filtered data access
 const item_data_t* find_consumable( item_subclass_consumable type, bool ptr, const std::function<bool(const item_data_t*)>& finder );
+
+// Class / Spec specific passives for an actor
+std::vector<const spell_data_t*> class_passives( const player_t* );
 }
 
 namespace hotfix
@@ -229,6 +229,7 @@ namespace hotfix
   {
     auto_dispose< std::vector<spell_data_t*> > spells_[ 2 ];
     auto_dispose< std::vector<spelleffect_data_t*> > effects_[ 2 ];
+    auto_dispose< std::vector<spellpower_data_t*> > powers_[ 2 ];
 
     ~custom_dbc_data_t();
 
@@ -239,6 +240,10 @@ namespace hotfix
     bool add_effect( spelleffect_data_t* spell, bool ptr = false );
     spelleffect_data_t* get_mutable_effect( unsigned effect_id, bool ptr = false );
     const spelleffect_data_t* find_effect( unsigned effect_id, bool ptr = false ) const;
+
+    bool add_power( spellpower_data_t* power, bool ptr = false );
+    spellpower_data_t* get_mutable_power( unsigned power_id, bool ptr = false );
+    const spellpower_data_t* find_power( unsigned power_id, bool ptr = false ) const;
 
     // Creates a tree of cloned spells and effects given a spell id, starting from the potential
     // root spell. If there is no need to clone the tree, return the custom spell instead.
@@ -345,9 +350,22 @@ namespace hotfix
     void apply_hotfix( bool ptr ) override;
   };
 
+  struct power_hotfix_entry_t : public dbc_hotfix_entry_t
+  {
+    power_hotfix_entry_t( const std::string& g, const std::string& t, unsigned id, const std::string& n, unsigned f ) :
+      dbc_hotfix_entry_t( g, t, id, n, f )
+    { }
+
+    std::string to_str() const override;
+
+    private:
+    void apply_hotfix( bool ptr ) override;
+  };
+
   bool register_hotfix( const std::string&, const std::string&, const std::string&, unsigned = HOTFIX_FLAG_DEFAULT );
   spell_hotfix_entry_t& register_spell( const std::string&, const std::string&, const std::string&, unsigned, unsigned = hotfix::HOTFIX_FLAG_DEFAULT );
   effect_hotfix_entry_t& register_effect( const std::string&, const std::string&, const std::string&, unsigned, unsigned = hotfix::HOTFIX_FLAG_DEFAULT );
+  power_hotfix_entry_t& register_power( const std::string&, const std::string&, const std::string&, unsigned, unsigned = hotfix::HOTFIX_FLAG_DEFAULT );
 
   void apply();
   std::string to_str( bool ptr );
@@ -355,6 +373,7 @@ namespace hotfix
   void add_hotfix_spell( spell_data_t* spell, bool ptr = false );
   const spell_data_t* find_spell( const spell_data_t* dbc_spell, bool ptr = false );
   const spelleffect_data_t* find_effect( const spelleffect_data_t* dbc_effect, bool ptr = false );
+  const spellpower_data_t* find_power( const spellpower_data_t* dbc_power, bool ptr = false );
 
   std::vector<const hotfix_entry_t*> hotfix_entries();
 }
@@ -364,7 +383,8 @@ namespace dbc_override
   enum dbc_override_e
   {
     DBC_OVERRIDE_SPELL = 0,
-    DBC_OVERRIDE_EFFECT
+    DBC_OVERRIDE_EFFECT,
+    DBC_OVERRIDE_POWER
   };
 
   struct dbc_override_entry_t
@@ -381,9 +401,11 @@ namespace dbc_override
 
   bool register_effect( dbc_t&, unsigned, const std::string&, double );
   bool register_spell( dbc_t&, unsigned, const std::string&, double );
+  bool register_power( dbc_t&, unsigned, const std::string&, double );
 
   const spell_data_t* find_spell( unsigned, bool ptr = false );
   const spelleffect_data_t* find_effect( unsigned, bool ptr = false );
+  const spelleffect_data_t* find_power( unsigned, bool ptr = false );
 
   const std::vector<dbc_override_entry_t>& override_entries();
 }
@@ -428,6 +450,28 @@ struct artifact_power_rank_t
 };
 
 // ==========================================================================
+// Spell Label Data - SpellLabel.db2
+// ==========================================================================
+
+struct spelllabel_data_t
+{
+  unsigned _id;
+  unsigned _id_spell;
+  short    _label;
+
+  unsigned id() const
+  { return _id; }
+
+  unsigned id_spell() const
+  { return _id_spell; }
+
+  short label() const
+  { return _label; }
+
+  static const spelllabel_data_t* list( bool ptr );
+};
+
+// ==========================================================================
 // Spell Power Data - SpellPower.dbc
 // ==========================================================================
 
@@ -438,7 +482,7 @@ public:
   unsigned _spell_id;
   unsigned _aura_id; // Spell id for the aura during which this power type is active
   unsigned _hotfix;
-  int      _power_e;
+  int      _power_type;
   int      _cost;
   int      _cost_max;
   int      _cost_per_tick;
@@ -461,7 +505,10 @@ public:
   { return _aura_id; }
 
   power_e type() const
-  { return static_cast< power_e >( _power_e ); }
+  { return static_cast< power_e >( _power_type ); }
+
+  int raw_type() const
+  { return _power_type; }
 
   double cost_divisor( bool percentage ) const
   {
@@ -507,6 +554,9 @@ public:
   static spellpower_data_t* find( unsigned, bool ptr = false );
   static spellpower_data_t* list( bool ptr = false );
   static void               link( bool ptr = false );
+
+  bool override_field( const std::string& field, double value );
+  double get_field( const std::string& field ) const;
 };
 
 class spellpower_data_nil_t : public spellpower_data_t
@@ -534,8 +584,8 @@ public:
                                      //   the first field
   unsigned         _spell_id;        // 3 Spell this effect belongs to
   unsigned         _index;           // 4 Effect index for the spell
-  effect_type_t    _type;            // 5 Effect type
-  effect_subtype_t _subtype;         // 6 Effect sub-type
+  unsigned         _type;            // 5 Effect type
+  unsigned         _subtype;         // 6 Effect sub-type
   // SpellScaling.dbc
   double           _m_avg;           // 7 Effect average spell scaling multiplier
   double           _m_delta;         // 8 Effect delta spell scaling multiplier
@@ -558,7 +608,7 @@ public:
   double           _real_ppl;        // 22 Effect real points per level
   int              _die_sides;       // 23 Effect damage range
   unsigned         _mechanic;        // 24 Effect Mechanic
-  unsigned         _chain_target;    // 25 Number of targets (for chained spells)
+  int              _chain_target;    // 25 Number of targets (for chained spells)
   unsigned         _targeting_1;     // 26 Targeting related field 1
   unsigned         _targeting_2;     // 27 Targeting related field 2
   double           _m_value;         // 28 Misc multiplier used for some spells(?)
@@ -584,9 +634,15 @@ public:
   { return _index; }
 
   effect_type_t type() const
+  { return static_cast<effect_type_t>( _type ); }
+
+  unsigned raw_type() const
   { return _type; }
 
   effect_subtype_t subtype() const
+  { return static_cast<effect_subtype_t>( _subtype ); }
+
+  unsigned raw_subtype() const
   { return _subtype; }
 
   int base_value() const
@@ -670,7 +726,7 @@ public:
   unsigned mechanic() const
   { return _mechanic; }
 
-  unsigned chain_target() const
+  int chain_target() const
   { return _chain_target; }
 
   unsigned target_1() const
@@ -767,53 +823,55 @@ public:
   // SpellCooldown.dbc
   unsigned    _cooldown;           // 14 Cooldown in milliseconds
   unsigned    _gcd;                // 15 GCD in milliseconds
+  unsigned    _category_cooldown;  // 16 Category cooldown in milliseconds
   // SpellCategory.dbc
-  unsigned    _charges;            // 16 Number of charges
-  unsigned    _charge_cooldown;    // 17 Cooldown duration of charges
+  unsigned    _charges;            // 17 Number of charges
+  unsigned    _charge_cooldown;    // 18 Cooldown duration of charges
   // SpellCategories.dbc
-  unsigned    _category;           // 18 Spell category (for shared cooldowns, effects?)
+  unsigned    _category;           // 19 Spell category (for shared cooldowns, effects?)
   // SpellDuration.dbc
-  double      _duration;           // 19 Spell duration in milliseconds
+  double      _duration;           // 20 Spell duration in milliseconds
   // SpellAuraOptions.dbc
-  unsigned    _max_stack;          // 20 Maximum stack size for spell
-  unsigned    _proc_chance;        // 21 Spell proc chance in percent
-  int         _proc_charges;       // 22 Per proc charge amount
-  unsigned    _proc_flags;         // 23 Proc flags
-  unsigned    _internal_cooldown;  // 24 ICD
-  double      _rppm;               // 25 Base real procs per minute
+  unsigned    _max_stack;          // 21 Maximum stack size for spell
+  unsigned    _proc_chance;        // 22 Spell proc chance in percent
+  int         _proc_charges;       // 23 Per proc charge amount
+  unsigned    _proc_flags;         // 24 Proc flags
+  unsigned    _internal_cooldown;  // 25 ICD
+  double      _rppm;               // 26 Base real procs per minute
   // SpellEquippedItems.dbc
-  unsigned    _equipped_class;         // 26
-  unsigned    _equipped_invtype_mask;  // 27
-  unsigned    _equipped_subclass_mask; // 28
+  unsigned    _equipped_class;         // 27
+  unsigned    _equipped_invtype_mask;  // 28
+  unsigned    _equipped_subclass_mask; // 29
   // SpellScaling.dbc
-  int         _cast_min;           // 29 Minimum casting time in milliseconds
-  int         _cast_max;           // 30 Maximum casting time in milliseconds
-  int         _cast_div;           // 31 A divisor used in the formula for casting time scaling (20 always?)
-  double      _c_scaling;          // 32 A scaling multiplier for level based scaling
-  unsigned    _c_scaling_level;    // 33 A scaling divisor for level based scaling
+  int         _cast_min;           // 30 Minimum casting time in milliseconds
+  int         _cast_max;           // 31 Maximum casting time in milliseconds
+  int         _cast_div;           // 32 A divisor used in the formula for casting time scaling (20 always?)
+  double      _c_scaling;          // 33 A scaling multiplier for level based scaling
+  unsigned    _c_scaling_level;    // 34 A scaling divisor for level based scaling
   // SpecializationSpells.dbc
-  unsigned    _replace_spell_id;   // 34
+  unsigned    _replace_spell_id;   // 35
   // Spell.dbc flags
-  unsigned    _attributes[NUM_SPELL_FLAGS]; // 35 Spell.dbc "flags", record field 1..10, note that 12694 added a field here after flags_7
-  unsigned    _class_flags[NUM_CLASS_FAMILY_FLAGS]; // 36 SpellClassOptions.dbc flags
-  unsigned    _class_flags_family; // 37 SpellClassOptions.dbc spell family
+  unsigned    _attributes[NUM_SPELL_FLAGS]; // 36 Spell.dbc "flags", record field 1..10, note that 12694 added a field here after flags_7
+  unsigned    _class_flags[NUM_CLASS_FAMILY_FLAGS]; // 37 SpellClassOptions.dbc flags
+  unsigned    _class_flags_family; // 38 SpellClassOptions.dbc spell family
   // SpellShapeshift.db2
-  unsigned    _stance_mask;        // 38 Stance mask (used only for druid form restrictions?)
+  unsigned    _stance_mask;        // 39 Stance mask (used only for druid form restrictions?)
   // SpellMechanic.db2
-  unsigned    _mechanic;           // 39
-  unsigned    _power_id;           // 40 Artifact power id
+  unsigned    _mechanic;           // 40
+  unsigned    _power_id;           // 41 Artifact power id
   // Textual data
-  const char* _desc;               // 41 Spell.dbc description stringblock
-  const char* _tooltip;            // 42 Spell.dbc tooltip stringblock
+  const char* _desc;               // 42 Spell.dbc description stringblock
+  const char* _tooltip;            // 43 Spell.dbc tooltip stringblock
   // SpellDescriptionVariables.dbc
-  const char* _desc_vars;          // 43 Spell description variable stringblock, if present
+  const char* _desc_vars;          // 44 Spell description variable stringblock, if present
   // SpellIcon.dbc
-  const char* _rank_str;           // 44
+  const char* _rank_str;           // 45
 
   // Pointers for runtime linking
   std::vector<const spelleffect_data_t*>* _effects;
   std::vector<const spellpower_data_t*>*  _power;
   std::vector<spell_data_t*>* _driver; // The triggered spell's driver(s)
+  std::vector<const spelllabel_data_t*>* _labels; // Applied (known) labels to the spell
   const hotfix::client_hotfix_entry_t* _hotfix_entry; // First hotfix entry in the hotfix table, if available
 
   // Direct member access functions
@@ -825,6 +883,9 @@ public:
 
   timespan_t cooldown() const
   { return timespan_t::from_millis( _cooldown ); }
+
+  timespan_t category_cooldown() const
+  { return timespan_t::from_millis( _category_cooldown ); }
 
   unsigned charges() const
   { return _charges; }
@@ -923,6 +984,9 @@ public:
   size_t power_count() const
   { return _power ? _power -> size() : 0; }
 
+  size_t label_count() const
+  { return _labels ? _labels -> size() : 0; }
+
   bool found() const
   { return ( this != not_found() ); }
 
@@ -970,6 +1034,16 @@ public:
     return *spellpower_data_t::nil();
   }
 
+  short labelN( size_t idx ) const
+  {
+    if ( _labels && idx > 0 && idx <= _labels -> size() )
+    {
+      return _labels -> at( idx - 1 ) -> label();
+    }
+
+    return 0;
+  }
+
   const spellpower_data_t& powerN( power_e pt ) const
   {
     assert( pt >= POWER_HEALTH && pt < POWER_MAX );
@@ -977,12 +1051,41 @@ public:
     {
       for ( size_t i = 0; i < _power -> size(); i++ )
       {
-        if ( _power -> at( i ) -> _power_e == pt )
+        if ( _power -> at( i ) -> _power_type == pt )
           return *_power -> at( i );
       }
     }
 
     return *spellpower_data_t::nil();
+  }
+
+  std::vector<short> labels() const
+  {
+    std::vector<short> l;
+    if ( ! _labels )
+    {
+      return l;
+    }
+
+    range::for_each( *_labels, [ &l ]( const spelllabel_data_t* data ) {
+      l.push_back( data -> label() );
+    } );
+
+    return l;
+  }
+
+  bool affected_by_label( int label ) const
+  {
+    if ( _labels == nullptr )
+    {
+      return false;
+    }
+
+    auto it = range::find_if( *_labels, [ label ]( const spelllabel_data_t* l ) {
+      return l -> label() == label;
+    } );
+
+    return it != _labels -> end();
   }
 
   bool is_class( player_e c ) const
@@ -998,6 +1101,9 @@ public:
   {
     switch ( _scaling_type )
     {
+      case -7: return PLAYER_SPECIAL_SCALE7;
+      case -6: return PLAYER_SPECIAL_SCALE6;
+      case -5: return PLAYER_SPECIAL_SCALE5;
       case -4: return PLAYER_SPECIAL_SCALE4;
       case -3: return PLAYER_SPECIAL_SCALE3;
       case -2: return PLAYER_SPECIAL_SCALE2;
@@ -1041,7 +1147,7 @@ public:
     {
       for ( size_t i = 0; i < _power -> size(); i++ )
       {
-        if ( ( *_power )[ i ] -> _power_e == pt )
+        if ( ( *_power )[ i ] -> _power_type == pt )
           return ( *_power )[ i ] -> cost();
       }
     }
@@ -1339,9 +1445,6 @@ public:
   const gem_property_data_t* gem_properties() const
   { return dbc::gem_properties( ptr ); }
 
-  bool add_token( unsigned int id_spell, const std::string& token_name ) const
-  { return dbc::add_token( id_spell, token_name, ptr ); }
-
   // Gametables removed in Legion
   double melee_crit_base( player_e, unsigned ) const
   { return 0.05; }
@@ -1350,7 +1453,7 @@ public:
   { return 0.05; }
 
   // Game data table access
-  double combat_rating_multiplier( unsigned item_level ) const;
+  double combat_rating_multiplier( unsigned item_level, combat_rating_multiplier_type type ) const;
   double melee_crit_base( pet_e t, unsigned level ) const;
   double spell_crit_base( pet_e t, unsigned level ) const;
   double dodge_base( player_e t ) const;
@@ -1412,6 +1515,9 @@ public:
   const spelleffect_data_t*      effect( unsigned effect_id ) const
   { return find_by_id<spelleffect_data_t>( effect_id ); }
 
+  const spellpower_data_t*       power( unsigned power_id ) const
+  { return find_by_id<spellpower_data_t>( power_id ); }
+
   // Always returns non-NULL.
   const talent_data_t*           talent( unsigned talent_id ) const
   { return find_by_id<talent_data_t>( talent_id ); }
@@ -1456,9 +1562,6 @@ public:
   unsigned mastery_ability_size() const;
   int      mastery_ability_tree( player_e c, uint32_t spell_id ) const;
 
-  unsigned glyph_spell( unsigned class_id, unsigned glyph_e, unsigned n ) const;
-  unsigned glyph_spell_size() const;
-
   // Helper methods
   double   weapon_dps( unsigned item_id, unsigned ilevel = 0 ) const;
   double   weapon_dps( const item_data_t*, unsigned ilevel = 0 ) const;
@@ -1483,11 +1586,8 @@ public:
   unsigned mastery_ability_id( specialization_e spec, const char* spell_name ) const;
   unsigned mastery_ability_id( specialization_e spec, uint32_t idx ) const;
 
-  unsigned glyph_spell_id( player_e c, const char* spell_name ) const;
-  unsigned glyph_spell_id( unsigned property_id ) const;
-
   bool     is_specialization_ability( uint32_t spell_id ) const;
-  bool     is_glyph_spell( uint32_t spell_id ) const;
+  bool     is_specialization_ability( specialization_e spec_id, unsigned spell_id ) const;
 
   specialization_e spec_by_spell( uint32_t spell_id ) const;
 
@@ -1496,6 +1596,9 @@ public:
 
   std::vector< const spell_data_t* > effect_affects_spells( unsigned, const spelleffect_data_t* ) const;
   std::vector< const spelleffect_data_t* > effects_affecting_spell( const spell_data_t* ) const;
+  std::vector<const spelleffect_data_t*> effect_labels_affecting_spell( const spell_data_t* ) const;
+  std::vector<const spelleffect_data_t*> effect_labels_affecting_label( short label ) const;
+  std::vector<const spelleffect_data_t*> effect_categories_affecting_spell( const spell_data_t* ) const;
 
   // Heirloomage and misc scaling hijinxery
   const scaling_stat_distribution_t* scaling_stat_distribution( unsigned id );
@@ -1504,6 +1607,7 @@ public:
   // Artifact stuff
   unsigned artifact_by_spec( specialization_e spec ) const;
   std::vector<const artifact_power_data_t*> artifact_powers( unsigned artifact_id ) const;
+  const artifact_power_data_t* artifact_power( unsigned power_id ) const;
   std::vector<const artifact_power_rank_t*> artifact_power_ranks( unsigned power_id ) const;
   unsigned artifact_power_spell_id( specialization_e spec, unsigned power_index, unsigned rank ) const;
   std::pair<unsigned, unsigned> artifact_relic_rank_index( unsigned artifact_id, unsigned relic_item_id ) const;
@@ -1511,6 +1615,11 @@ public:
   // Child items
   unsigned child_item( unsigned ) const;
   unsigned parent_item( unsigned ) const;
+
+  // Labeled spells
+  std::vector<const spell_data_t*> spells_by_label( size_t label ) const;
+  // Categorized spells
+  std::vector<const spell_data_t*> spells_by_category( unsigned category ) const;
 };
 
 namespace dbc

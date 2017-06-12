@@ -3,8 +3,8 @@
 // Send questions to natehieter@gmail.com
 // ==========================================================================
 
-#include "simulationcraft.hpp"
 #include "sc_report.hpp"
+#include "simulationcraft.hpp"
 
 // ==========================================================================
 // Report
@@ -120,8 +120,8 @@ class tooltip_parser_t
 
     const spelleffect_data_t& effect = spell.effectN( effect_number );
     bool show_scale_factor           = effect.type() != E_APPLY_AURA;
-    double s_min = dbc.effect_min( effect.id(), level );
-    double s_max = dbc.effect_max( effect.id(), level );
+    double s_min                     = dbc.effect_min( effect.id(), level );
+    double s_max                     = dbc.effect_max( effect.id(), level );
     if ( s_min < 0 && s_max == s_min )
       s_max = s_min = -s_min;
     else if ( ( player && effect.type() == E_SCHOOL_DAMAGE &&
@@ -273,8 +273,6 @@ std::string tooltip_parser_t::parse()
           if ( player )
           {
             has_spell = player->find_class_spell( spell->name_cstr() )->ok();
-            if ( !has_spell )
-              has_spell = player->find_glyph_spell( spell->name_cstr() )->ok();
           }
           replacement_text = has_spell ? "true" : "false";
           break;
@@ -317,8 +315,14 @@ std::string tooltip_parser_t::parse()
           if ( !spell )
             throw error();
           assert( player );
-          replacement_text =
-              report::pretty_spell_text( *spell, spell->desc(), *player );
+
+          // References in tooltips/descriptions don't seem to form DAG, check
+          // for cycles of length 1 here (which should hopefully be enough).
+          if ( spell -> id() != default_spell.id() )
+          {
+            replacement_text =
+                report::pretty_spell_text( *spell, spell->desc(), *player );
+          }
           break;
         }
 
@@ -369,37 +373,11 @@ const color::rgb& item_quality_color( const item_t& item )
       return color::POOR;
   }
 }
-
-bool find_affix( const std::string& name, const std::string& data_name,
-                        std::string& prefix, std::string& suffix )
-{
-  std::string tokenized_name = data_name;
-  util::tokenize( tokenized_name );
-
-  std::string::size_type affix_offset = name.find( tokenized_name );
-
-  // Add an affix to the name, if the name does not match the
-  // spell name. Affix is either the prefix- or suffix portion of the
-  // non matching parts of the stats name.
-  if ( affix_offset != std::string::npos && tokenized_name != name )
-  {
-    // Suffix
-    if ( affix_offset == 0 )
-      suffix = "&#160;(" + name.substr( tokenized_name.size() ) + ")";
-    // Prefix
-    else if ( affix_offset > 0 )
-      prefix = "(" + name.substr( 0, affix_offset ) + ")&#160;";
-  }
-  else if ( affix_offset == std::string::npos )
-    suffix = "&#160;(" + name + ")";
-
-  return !prefix.empty() || !suffix.empty();
-}
-
 }  // UNNAMED NAMESPACE ======================================================
 
 std::string report::pretty_spell_text( const spell_data_t& default_spell,
-                               const std::string& text, const player_t& p )
+                                       const std::string& text,
+                                       const player_t& p )
 {
   return tooltip_parser_t( p, default_spell, text ).parse();
 }
@@ -408,103 +386,153 @@ std::string report::pretty_spell_text( const spell_data_t& default_spell,
 
 bool report::check_gear_ilevel( player_t& p, sim_t& sim )
 {
-  int max_ilevel_allowed = 0;
-  int max_weapon_ilevel_allowed = 0;
-  bool return_value = true;
+  int max_ilevel_allowed           = 0;
+  int max_weapon_ilevel_allowed    = 0;
+  bool return_value                = true;
   int max_legendary_ilevel_allowed = 0;
-  int equipped_legendary_items = 0;
-  int legendary_items_allowed = 0;
-  std::string tier_name = "";
+  int equipped_legendary_items     = 0;
+  int legendary_items_allowed      = 0;
+  std::string tier_name            = "";
 
   if ( p.report_information.save_str.find( "T19P" ) != std::string::npos )
   {
-    max_ilevel_allowed = 840;
-    max_weapon_ilevel_allowed = 870;
-    tier_name = "T19P";
+    max_ilevel_allowed        = 875;
+    max_weapon_ilevel_allowed = 903;
+    tier_name                 = "T19P";
+  }
+  else if ( p.report_information.save_str.find( "T19H_NH" ) != std::string::npos )
+  {
+    max_ilevel_allowed           = 895;
+    max_weapon_ilevel_allowed    = 927;
+    tier_name                    = "T19H_NH";
+  }
+  else if ( p.report_information.save_str.find( "T19M_NH" ) != std::string::npos )
+  {
+    max_ilevel_allowed           = 910;
+    max_weapon_ilevel_allowed    = 933;
+    tier_name                    = "T19M_NH";
   }
   else if ( p.report_information.save_str.find( "T19H" ) != std::string::npos )
   {
-    max_ilevel_allowed = 865;
+    max_ilevel_allowed        = 865;
     max_weapon_ilevel_allowed = 900;
-    tier_name = "T19H";
+    tier_name                 = "T19H";
   }
   else if ( p.report_information.save_str.find( "T19M" ) != std::string::npos )
   {
-    max_ilevel_allowed = 880;
-    max_weapon_ilevel_allowed = 910;
-    tier_name = "T19M";
-    max_legendary_ilevel_allowed = max_ilevel_allowed += 15;
-    legendary_items_allowed = 1;
+    max_ilevel_allowed           = 895;
+    max_weapon_ilevel_allowed    = 918;
+    tier_name                    = "T19M";
+  }
+  else if ( p.report_information.save_str.find( "T20H" ) != std::string::npos )
+  {
+    legendary_items_allowed   = 2;
+    max_ilevel_allowed        = 925;
+    max_weapon_ilevel_allowed = 945;
+    tier_name                 = "T20H";
+  }
+  else if ( p.report_information.save_str.find( "T20M" ) != std::string::npos )
+  {
+    legendary_items_allowed      = 2;
+    max_ilevel_allowed           = 940;
+    max_weapon_ilevel_allowed    = 960;
+    tier_name                    = "T20M";
   }
   else
   {
     return return_value;
   }
 
-  const slot_e SLOT_OUT_ORDER[] =
-  {
-    SLOT_HEAD, SLOT_NECK, SLOT_SHOULDERS, SLOT_BACK, SLOT_CHEST, SLOT_SHIRT, SLOT_TABARD, SLOT_WRISTS,
-    SLOT_HANDS, SLOT_WAIST, SLOT_LEGS, SLOT_FEET, SLOT_FINGER_1, SLOT_FINGER_2, SLOT_TRINKET_1, SLOT_TRINKET_2,
-    SLOT_MAIN_HAND, SLOT_OFF_HAND, SLOT_RANGED,
+  max_legendary_ilevel_allowed = 970;
+
+  const slot_e SLOT_OUT_ORDER[] = {
+      SLOT_HEAD,      SLOT_NECK,     SLOT_SHOULDERS, SLOT_BACK,
+      SLOT_CHEST,     SLOT_SHIRT,    SLOT_TABARD,    SLOT_WRISTS,
+      SLOT_HANDS,     SLOT_WAIST,    SLOT_LEGS,      SLOT_FEET,
+      SLOT_FINGER_1,  SLOT_FINGER_2, SLOT_TRINKET_1, SLOT_TRINKET_2,
+      SLOT_MAIN_HAND, SLOT_OFF_HAND, SLOT_RANGED,
   };
 
-  const slot_e SLOT_DUPLICATES[] =
-  {
-    SLOT_FINGER_1, SLOT_FINGER_2, SLOT_TRINKET_1, SLOT_TRINKET_2,
+  const slot_e SLOT_DUPLICATES[] = {
+      SLOT_FINGER_1, SLOT_FINGER_2, SLOT_TRINKET_1, SLOT_TRINKET_2,
   };
 
-
-  for ( auto & slot : SLOT_OUT_ORDER )
+  for ( auto& slot : SLOT_OUT_ORDER )
   {
-    item_t& item = p.items[slot];
+    item_t& item = p.items[ slot ];
 
     if ( item.parsed.data.quality == 5 )
       equipped_legendary_items++;
 
-    if ( slot == SLOT_MAIN_HAND || slot == SLOT_OFF_HAND || slot == SLOT_RANGED )
+    if ( slot == SLOT_MAIN_HAND || slot == SLOT_OFF_HAND ||
+         slot == SLOT_RANGED )
     {
       if ( item.parsed.data.level > max_weapon_ilevel_allowed )
       {
-        sim.errorf( "Player %s has weapon of ilevel %s, maximum allowed ilevel for %s weapons is %s.\n",
-                    p.name(), util::to_string( item.parsed.data.level ).c_str(), tier_name.c_str(), util::to_string( max_weapon_ilevel_allowed ).c_str() );
+        sim.errorf(
+            "Player %s has weapon of ilevel %s, maximum allowed ilevel for %s "
+            "weapons is %s.\n",
+            p.name(), util::to_string( item.parsed.data.level ).c_str(),
+            tier_name.c_str(),
+            util::to_string( max_weapon_ilevel_allowed ).c_str() );
         return_value = false;
       }
     }
-    else if ( item.parsed.data.quality == 5 && ( item.parsed.data.level > max_legendary_ilevel_allowed ) )
+    else if ( item.parsed.data.quality == 5 &&
+              ( item.parsed.data.level > max_legendary_ilevel_allowed ) )
     {
-      sim.errorf( "Player %s has %s of ilevel %s, maximum allowed ilevel for %s legendarys is %s.\n",
-                  p.name(), util::slot_type_string( slot ), util::to_string( item.parsed.data.level ).c_str(), tier_name.c_str(), util::to_string( max_legendary_ilevel_allowed ).c_str() );
+      sim.errorf(
+          "Player %s has %s of ilevel %s, maximum allowed ilevel for %s "
+          "legendarys is %s.\n",
+          p.name(), util::slot_type_string( slot ),
+          util::to_string( item.parsed.data.level ).c_str(), tier_name.c_str(),
+          util::to_string( max_legendary_ilevel_allowed ).c_str() );
       return_value = false;
     }
-    else if ( item.parsed.data.quality != 5 && ( item.parsed.data.level > max_ilevel_allowed ) )
+    else if ( item.parsed.data.quality != 5 &&
+              ( item.parsed.data.level > max_ilevel_allowed ) )
     {
-      sim.errorf( "Player %s has %s of ilevel %s, maximum allowed ilevel for %s is %s.\n",
-                  p.name(), util::slot_type_string( slot ), util::to_string( item.parsed.data.level ).c_str(), tier_name.c_str(), util::to_string( max_ilevel_allowed ).c_str() );
+      sim.errorf(
+          "Player %s has %s of ilevel %s, maximum allowed ilevel for %s is "
+          "%s.\n",
+          p.name(), util::slot_type_string( slot ),
+          util::to_string( item.parsed.data.level ).c_str(), tier_name.c_str(),
+          util::to_string( max_ilevel_allowed ).c_str() );
       return_value = false;
     }
 
-    if ( !( slot == SLOT_MAIN_HAND || slot == SLOT_OFF_HAND || slot == SLOT_RANGED ) )
+    if ( !( slot == SLOT_MAIN_HAND || slot == SLOT_OFF_HAND ||
+            slot == SLOT_RANGED ) && !(item.parsed.data.quality == 5 ) )
     {
+      size_t num_gems = 0;
       for ( size_t jj = 0; jj < item.parsed.gem_id.size(); ++jj )
       {
-        if ( item.parsed.gem_id[jj] > 0 )
+        if ( item.parsed.data.stat_alloc[0] == 7889 &&
+             item.parsed.gem_id[ jj ] > 0 && num_gems < 1 )
         {
-          sim.errorf( "Player %s has gems equipped in slot %s, there are no gems allowed in default profiles even if they have a slot by default, this is to ensure that all default profiles within %s are as equal as possible.\n",
-                      p.name(), util::slot_type_string( slot ), tier_name.c_str() );
+          num_gems++;
+          continue; // 7889 seems to be the stat value for an item that comes with a socket by default, so we will allow 1 gem there.
+        }
+        if ( item.parsed.gem_id[ jj ] > 0 )
+        {
+          sim.errorf(
+              "Player %s has gems equipped in slot %s, there are no gems "
+              "allowed in default profiles even if they have a slot by "
+              "default, this is to ensure that all default profiles within %s "
+              "are as equal as possible.\n",
+              p.name(), util::slot_type_string( slot ), tier_name.c_str() );
           return_value = false;
           break;
         }
       }
     }
-    
-    if ( slot == SLOT_FINGER_1 || 
-         slot == SLOT_FINGER_2 || 
-         slot == SLOT_TRINKET_1 || 
-         slot == SLOT_TRINKET_2 )
+
+    if ( slot == SLOT_FINGER_1 || slot == SLOT_FINGER_2 ||
+         slot == SLOT_TRINKET_1 || slot == SLOT_TRINKET_2 )
     {
-      for ( auto & slot2 : SLOT_DUPLICATES )
+      for ( auto& slot2 : SLOT_DUPLICATES )
       {
-        item_t& unique = p.items[slot2];
+        item_t& unique = p.items[ slot2 ];
         if ( slot2 == slot )
           continue;
         if ( p.dbc.item( unique.parsed.data.id ) == nullptr )
@@ -514,9 +542,13 @@ bool report::check_gear_ilevel( player_t& p, sim_t& sim )
 
         if ( unique.parsed.data.id == item.parsed.data.id )
         {
-          if ( p.dbc.item( unique.parsed.data.id ) -> flags_1 == 524288 && p.dbc.item( item.parsed.data.id ) -> flags_1 == 524288 )
-            sim.errorf( "Player %s has equipped more than 1 of a unique item in slots %s and %s, please remove one of the unique items.\n",
-                        p.name(), util::slot_type_string( slot ), util::slot_type_string( slot2 ) );
+          if ( p.dbc.item( unique.parsed.data.id )->flags_1 == 524288 &&
+               p.dbc.item( item.parsed.data.id )->flags_1 == 524288 )
+            sim.errorf(
+                "Player %s has equipped more than 1 of a unique item in slots "
+                "%s and %s, please remove one of the unique items.\n",
+                p.name(), util::slot_type_string( slot ),
+                util::slot_type_string( slot2 ) );
           return_value = false;
         }
       }
@@ -524,54 +556,85 @@ bool report::check_gear_ilevel( player_t& p, sim_t& sim )
   }
   if ( equipped_legendary_items > legendary_items_allowed )
   {
-    sim.errorf( "Player %s has %s legendary items. %s allows %s legendary item(s).\n",
-                p.name(), util::to_string( equipped_legendary_items ).c_str(), tier_name.c_str(), util::to_string( legendary_items_allowed ).c_str() );
+    sim.errorf(
+        "Player %s has %s legendary items. %s allows %s legendary item(s).\n",
+        p.name(), util::to_string( equipped_legendary_items ).c_str(),
+        tier_name.c_str(), util::to_string( legendary_items_allowed ).c_str() );
     return_value = false;
   }
 
   return return_value;
 }
 
-
 // report::check_artifact_points ============================================
-// This is to make sure our default profiles are using the same number of artifact points.
+// This is to make sure our default profiles are using the same number of
+// artifact points.
 
-bool report::check_artifact_points( const player_t& p, sim_t& sim  )
+bool report::check_artifact_points( const player_t& p, sim_t& sim )
 {
-  auto splits = util::string_split( p.artifact_str, ":" );
-  unsigned max_allowed = 0;
+  auto splits           = util::string_split( p.artifact_str, ":" );
+  unsigned max_allowed  = 0;
   std::string tier_name = "";
 
   if ( p.report_information.save_str.find( "T19P" ) != std::string::npos )
   {
-    max_allowed = 22;
-    tier_name = "T19P";
+    max_allowed = 19;
+    tier_name   = "T19P";
+  }
+  else if ( p.report_information.save_str.find( "T19H_NH" ) != std::string::npos )
+  {
+    max_allowed = 42;
+    tier_name   = "T19H_NH";
+  }
+  else if ( p.report_information.save_str.find( "T19M_NH" ) != std::string::npos )
+  {
+    max_allowed = 52;
+    tier_name   = "T19M_NH";
   }
   else if ( p.report_information.save_str.find( "T19H" ) != std::string::npos )
   {
-    max_allowed = 29;
-    tier_name = "T19H";
+    max_allowed = 35;
+    tier_name   = "T19H";
   }
   else if ( p.report_information.save_str.find( "T19M" ) != std::string::npos )
   {
-    max_allowed = 37;
-    tier_name = "T19M";
+    max_allowed = 36;
+    tier_name   = "T19M";
+  }
+  else if ( p.report_information.save_str.find( "T20H" ) != std::string::npos )
+  {
+    max_allowed = 52;
+    tier_name   = "T20H";
+  }
+  else if ( p.report_information.save_str.find( "T20M" ) != std::string::npos )
+  {
+    max_allowed = 52;
+    tier_name   = "T20M";
   }
   else
   {
     return true;
   }
 
-  if ( p.artifact.n_points - 1 > max_allowed )
+  // Relics must be added on top of the limit!
+  max_allowed += 3;
+
+  if ( p.artifact.n_points > max_allowed )
   {
-    sim.errorf( "Player %s has %s artifact points, maximum allowed (including relics) for %s is %s.\n",
-                 p.name(), util::to_string( p.artifact.n_points - 1 ).c_str(), tier_name.c_str(), util::to_string( max_allowed ).c_str() );
+    sim.errorf(
+        "Player %s has %s artifact points, maximum allowed (including relics) "
+        "for %s is %s.\n",
+        p.name(), util::to_string( p.artifact.n_points ).c_str(),
+        tier_name.c_str(), util::to_string( max_allowed ).c_str() );
     return false;
   }
-  else if ( ( p.artifact.n_points - 1 ) < max_allowed && p.level() == 110 )
+  else if ( p.artifact.n_points < max_allowed && p.level() == 110 )
   {
-    sim.errorf( "Player %s has %s artifact points, maximum allowed (including relics) for %s is %s. Add more!\n",
-                p.name(), util::to_string( p.artifact.n_points - 1 ).c_str(), tier_name.c_str(), util::to_string( max_allowed ).c_str() );
+    sim.errorf(
+        "Player %s has %s artifact points, maximum allowed (including relics) "
+        "for %s is %s. Add more!\n",
+        p.name(), util::to_string( p.artifact.n_points ).c_str(),
+        tier_name.c_str(), util::to_string( max_allowed ).c_str() );
     return true;
   }
 
@@ -1066,11 +1129,10 @@ void report::print_html_sample_data( report::sc_html_stream& os,
     os << ">\n";
     os.format(
         "\t\t\t\t\t\t\t\t\t<td class=\"left\">1%% Error</td>\n"
-        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%i</td>\n"
+        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%.0f</td>\n"
         "\t\t\t\t\t\t\t\t</tr>\n",
-        (int)( data.mean()
-                   ? ( ( mean_error * mean_error * ( (float)data.size() ) /
-                         ( 0.01 * data.mean() * 0.01 * data.mean() ) ) )
+        std::ceil( data.mean()
+                   ? ( mean_error * mean_error * data.size() / ( 0.01 * data.mean() * 0.01 * data.mean() ) )
                    : 0 ) );
 
     ++i;
@@ -1082,11 +1144,10 @@ void report::print_html_sample_data( report::sc_html_stream& os,
     os << ">\n";
     os.format(
         "\t\t\t\t\t\t\t\t\t<td class=\"left\">0.1%% Error</td>\n"
-        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%i</td>\n"
+        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%.0f</td>\n"
         "\t\t\t\t\t\t\t\t</tr>\n",
-        (int)( data.mean()
-                   ? ( ( mean_error * mean_error * ( (float)data.size() ) /
-                         ( 0.001 * data.mean() * 0.001 * data.mean() ) ) )
+        std::ceil( data.mean()
+                   ? ( mean_error * mean_error * data.size() / ( 0.001 * data.mean() * 0.001 * data.mean() ) )
                    : 0 ) );
 
     ++i;
@@ -1099,10 +1160,9 @@ void report::print_html_sample_data( report::sc_html_stream& os,
     os.format(
         "\t\t\t\t\t\t\t\t\t<td class=\"left\">0.1 Scale Factor Error with "
         "Delta=300</td>\n"
-        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%i</td>\n"
+        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%.0f</td>\n"
         "\t\t\t\t\t\t\t\t</tr>\n",
-        (int)( 2.0 * mean_error * mean_error * ( (float)data.size() ) /
-               ( 30 * 30 ) ) );
+        std::ceil( 2.0 * mean_error * mean_error * data.size() / ( 30.0 * 30.0 ) ) );
 
     ++i;
     os << "\t\t\t\t\t\t\t\t<tr";
@@ -1114,10 +1174,9 @@ void report::print_html_sample_data( report::sc_html_stream& os,
     os.format(
         "\t\t\t\t\t\t\t\t\t<td class=\"left\">0.05 Scale Factor Error with "
         "Delta=300</td>\n"
-        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%i</td>\n"
+        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%.0f</td>\n"
         "\t\t\t\t\t\t\t\t</tr>\n",
-        (int)( 2.0 * mean_error * mean_error * ( (float)data.size() ) /
-               ( 15 * 15 ) ) );
+        std::ceil( 2.0 * mean_error * mean_error * data.size() / ( 15 * 15 ) ) );
 
     ++i;
     os << "\t\t\t\t\t\t\t\t<tr";
@@ -1129,10 +1188,9 @@ void report::print_html_sample_data( report::sc_html_stream& os,
     os.format(
         "\t\t\t\t\t\t\t\t\t<td class=\"left\">0.01 Scale Factor Error with "
         "Delta=300</td>\n"
-        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%i</td>\n"
+        "\t\t\t\t\t\t\t\t\t<td class=\"right\">%.0f</td>\n"
         "\t\t\t\t\t\t\t\t</tr>\n",
-        (int)( 2.0 * mean_error * mean_error * ( (float)data.size() ) /
-               ( 3 * 3 ) ) );
+        std::ceil( 2.0 * mean_error * mean_error * data.size() / ( 3 * 3 ) ) );
   }
 
   os << "\t\t\t\t\t\t\t\t</table>\n";
@@ -1205,7 +1263,7 @@ void report::generate_player_charts( player_t& p,
   {
     ri.gear_weights_wowhead_std_link = gear_weights::wowhead( p );
     ri.gear_weights_pawn_string      = gear_weights::pawn( p );
-    ri.gear_weights_askmrrobot_link  = gear_weights::askmrrobot( p );
+    //ri.gear_weights_askmrrobot_link  = gear_weights::askmrrobot( p ); AMR has changed their web api drastically, I doubt we'll be able to interface them anymore.
   }
 
   // Create html profile str
@@ -1252,44 +1310,6 @@ std::string report::decoration_domain( const sim_t& sim )
 #endif
 }
 
-std::string report::decorated_buff_name( const buff_t* buff )
-{
-  std::stringstream s;
-
-  std::string buff_name;
-  if ( buff -> player -> is_pet() )
-  {
-    buff_name += buff -> player -> name_str + ": ";
-  }
-  buff_name += buff -> name_str;
-
-  if ( buff->sim->decorated_tooltips == false || buff->data().id() == 0 )
-  {
-    s << "<a href=\"#\">" << buff_name << "</a>";
-  }
-  else
-  {
-    std::string prefix, suffix;
-    find_affix( buff -> name_str, buff->data().name_cstr(), prefix, suffix );
-
-    s << prefix << "<a href=\"http://" << decoration_domain( *buff->sim )
-      << ".wowdb.com/spells/" << buff->data().id();
-
-    if ( buff->item )
-    {
-      s << "?itemLevel=" << buff->item->item_level();
-    }
-    s << "\">";
-    if ( buff -> player -> is_pet() )
-    {
-      s << buff -> player -> name_str << ": ";
-    }
-    s << buff->data().name_cstr() << "</a>" << suffix;
-  }
-
-  return s.str();
-}
-
 std::string report::decorated_spell_name( const sim_t& sim,
                                           const spell_data_t& spell,
                                           const std::string& parms_str )
@@ -1303,7 +1323,8 @@ std::string report::decorated_spell_name( const sim_t& sim,
   else
   {
     s << "<a href=\"http://" << decoration_domain( sim ) << ".wowdb.com/spells/"
-      << spell.id() << ( ! parms_str.empty() ? "?" + parms_str : "" ) << "\">" << spell.name_cstr() << "</a>";
+      << spell.id() << ( !parms_str.empty() ? "?" + parms_str : "" ) << "\">"
+      << spell.name_cstr() << "</a>";
   }
 
   return s.str();
@@ -1393,31 +1414,6 @@ std::string report::decorated_item_name( const item_t* item )
   return s.str();
 }
 
-std::string report::decorated_action_name( const action_t* action, const std::string& stats_name_str )
-{
-  std::stringstream s;
-
-  if ( action->sim->decorated_tooltips == false || action->data().id() == 0 )
-  {
-    s << "<a href=\"#\">" << stats_name_str << "</a>";
-  }
-  else
-  {
-    std::string prefix, suffix;
-    find_affix( stats_name_str, action->data().name_cstr(), prefix, suffix );
-
-    s << prefix << "<a href=\"http://" << decoration_domain( *action->sim )
-      << ".wowdb.com/spells/" << action->data().id();
-    if ( action->item )
-    {
-      s << "?itemLevel=" << action->item->item_level();
-    }
-    s << "\">" << action->data().name_cstr() << "</a>" << suffix;
-  }
-
-  return s.str();
-}
-
 std::vector<std::string> report::beta_warnings()
 {
   std::vector<std::string> s = {
@@ -1431,4 +1427,185 @@ std::vector<std::string> report::beta_warnings()
       "dramatically.",
       "Beta! Beta! Beta! Beta! Beta! Beta!"};
   return s;
+}
+
+std::string report::buff_decorator_t::url_name_prefix() const
+{
+  if ( m_obj -> source && m_obj -> source -> is_pet() )
+  {
+    return m_obj -> source -> name_str + ":&#160;";
+  }
+
+  return std::string();
+}
+
+std::vector<std::string> report::buff_decorator_t::parms() const
+{
+  std::vector<std::string> parms = super::parms();
+
+  if ( m_obj -> source && m_obj -> source -> specialization() != SPEC_NONE )
+  {
+    parms.push_back( "spec=" + util::to_string( m_obj -> source -> specialization() ) );
+  }
+
+  return parms;
+}
+
+std::vector<std::string> report::action_decorator_t::parms() const
+{
+  std::vector<std::string> parms = super::parms();
+
+  if ( m_obj -> player && m_obj -> player -> specialization() != SPEC_NONE )
+  {
+    parms.push_back( "spec=" + util::to_string( m_obj -> player -> specialization() ) );
+  }
+
+  return parms;
+}
+
+report::spell_data_decorator_t::spell_data_decorator_t( const player_t* obj, const spell_data_t* spell ) :
+  html_decorator_t(), m_sim( obj -> sim ), m_player( obj ), m_spell( spell ),
+  m_item( nullptr ), m_power( nullptr )
+{ }
+
+report::spell_data_decorator_t::spell_data_decorator_t( const player_t* obj, const artifact_power_t& power ) :
+  spell_data_decorator_t( obj, power.data() )
+{
+  artifact_power( power );
+}
+
+bool report::spell_data_decorator_t::can_decorate() const
+{
+  return m_sim -> decorated_tooltips && m_spell -> id() > 0;
+}
+
+std::string report::spell_data_decorator_t::url_name() const
+{ return m_spell -> name_cstr(); }
+
+std::string report::spell_data_decorator_t::token() const
+{
+  std::string token = m_spell -> name_cstr();
+  util::tokenize( token );
+  return token;
+}
+
+std::vector<std::string> report::spell_data_decorator_t::parms() const
+{
+  auto params = html_decorator_t::parms();
+
+  if ( m_player && m_player -> specialization() != SPEC_NONE )
+  {
+    params.push_back( "spec=" + util::to_string( m_player -> specialization() ) );
+  }
+
+  if ( m_item )
+  {
+    params.push_back( "itemLevel=" + util::to_string( m_item -> item_level() ) );
+  }
+
+  if ( m_power )
+  {
+    params.push_back( "artifactRank=" + util::to_string( m_power -> rank() ) );
+  }
+
+  return params;
+}
+
+std::string report::spell_data_decorator_t::base_url() const
+{
+  std::stringstream s;
+
+  s << "<a href=\"http://" << decoration_domain( *m_sim )
+    << ".wowdb.com/spells/" << m_spell -> id();
+
+  return s.str();
+}
+
+bool report::item_decorator_t::can_decorate() const
+{
+  return m_item -> sim -> decorated_tooltips && m_item -> parsed.data.id > 0;
+}
+
+std::string report::item_decorator_t::base_url() const
+{
+  std::stringstream s;
+
+  s << "<a "
+    << "style=\"color:" << item_quality_color( *m_item ) << ";\" "
+    << "href=\"http://" << decoration_domain( *m_item -> sim )
+    << ".wowdb.com/items/" << m_item -> parsed.data.id;
+
+  return s.str();
+}
+
+std::string report::item_decorator_t::token() const
+{
+  return m_item -> name();
+}
+
+std::string report::item_decorator_t::url_name() const
+{
+  return m_item -> full_name();
+}
+
+std::vector<std::string> report::item_decorator_t::parms() const
+{
+  auto params = html_decorator_t::parms();
+
+  if ( m_item -> parsed.enchant_id > 0 )
+  {
+    params.push_back( "enchantment=" + util::to_string( m_item -> parsed.enchant_id ) );
+  }
+
+  if ( m_item -> parsed.upgrade_level > 0 )
+  {
+    params.push_back( "upgradeNum=" + util::to_string( m_item -> parsed.upgrade_level ) );
+  }
+
+  std::stringstream gem_str;
+  for ( size_t i = 0, end =  m_item -> parsed.gem_id.size(); i < end; ++i )
+  {
+    if ( m_item -> parsed.gem_id[ i ] == 0 )
+    {
+      continue;
+    }
+
+    if ( gem_str.tellp() > 0 )
+    {
+      gem_str << ",";
+    }
+
+    gem_str << util::to_string( m_item -> parsed.gem_id[ i ] );
+
+    // Include relic bonus ids
+    if ( i < m_item -> parsed.relic_data.size() )
+    {
+      range::for_each( m_item -> parsed.relic_data[ i ], [ &gem_str ]( unsigned bonus_id ) {
+          gem_str << ":" << bonus_id;
+      } );
+    }
+  }
+
+  if ( gem_str.tellp() > 0 )
+  {
+    params.push_back( "gems=" + gem_str.str() );
+  }
+
+  std::stringstream bonus_str;
+  for ( size_t i = 0, end = m_item -> parsed.bonus_id.size(); i < end; ++i )
+  {
+    bonus_str << util::to_string( m_item -> parsed.bonus_id[ i ] );
+
+    if ( i < end - 1 )
+    {
+      bonus_str << ",";
+    }
+  }
+
+  if ( bonus_str.tellp() > 0 )
+  {
+    params.push_back( "bonusIDs=" + bonus_str.str() );
+  }
+
+  return params;
 }

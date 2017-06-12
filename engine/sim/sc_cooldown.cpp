@@ -12,19 +12,21 @@ struct recharge_event_t : event_t
   cooldown_t* cooldown_;
   timespan_t duration_, event_duration_;
 
-  recharge_event_t( cooldown_t* cd, timespan_t base_duration ) :
-    event_t( cd -> sim ), cooldown_( cd ),
-    duration_( base_duration ),
-    event_duration_( cooldown_t::cooldown_duration( cd, base_duration ) )
+  recharge_event_t( cooldown_t* cd, timespan_t base_duration )
+    : event_t( cd->sim, cooldown_t::cooldown_duration( cd, base_duration ) ),
+      cooldown_( cd ),
+      duration_( base_duration ),
+      event_duration_( cooldown_t::cooldown_duration( cd, base_duration ) )
   {
-    add_event( event_duration_ );
   }
 
-  recharge_event_t( cooldown_t* cd, timespan_t event_duration, timespan_t base_duration ) :
-    event_t( *cd -> player ), cooldown_( cd ),
-    duration_( base_duration ), event_duration_( event_duration )
+  recharge_event_t( cooldown_t* cd, timespan_t event_duration,
+                    timespan_t base_duration )
+    : event_t( *cd->player, event_duration ),
+      cooldown_( cd ),
+      duration_( base_duration ),
+      event_duration_( event_duration )
   {
-    add_event( event_duration_ );
   }
 
   virtual const char* name() const override
@@ -38,7 +40,7 @@ struct recharge_event_t : event_t
 
     if ( cooldown_ -> current_charge < cooldown_ -> charges )
     {
-      cooldown_ -> recharge_event = new ( sim() ) recharge_event_t( cooldown_, duration_ );
+      cooldown_ -> recharge_event = make_event<recharge_event_t>( sim(), cooldown_, duration_ );
     }
     else
     {
@@ -48,11 +50,14 @@ struct recharge_event_t : event_t
 
     if ( sim().debug )
     {
-      sim().out_debug.printf( "%s recharge cooldown %s regenerated charge, current=%d, total=%d, next=%.3f, ready=%.3f, base_duration=%.3f, mul=%f",
+      auto dur = cooldown_t::cooldown_duration( cooldown_, duration_ ).total_seconds();
+      auto true_base_duration = dur / cooldown_ -> recharge_multiplier;
+      sim().out_debug.printf( "%s recharge cooldown %s regenerated charge, current=%d, total=%d, next=%.3f, ready=%.3f, dur=%.3f, base_dur=%.3f, mul=%f",
         cooldown_ -> player -> name(), cooldown_ -> name_str.c_str(), cooldown_ -> current_charge, cooldown_ -> charges,
         cooldown_ -> recharge_event ? cooldown_ -> recharge_event -> occurs().total_seconds() : 0,
         cooldown_ -> ready.total_seconds(),
-        cooldown_t::cooldown_duration( cooldown_, duration_ ).total_seconds(),
+        dur,
+        true_base_duration,
         cooldown_ -> recharge_multiplier );
     }
 
@@ -68,10 +73,9 @@ struct ready_trigger_event_t : public player_event_t
   cooldown_t* cooldown;
 
   ready_trigger_event_t( player_t& p, cooldown_t* cd ) :
-    player_event_t( p ),
+    player_event_t( p, cd -> ready - p.sim -> current_time() ),
     cooldown( cd )
   {
-    add_event( cd -> ready - sim().current_time() );
   }
   virtual const char* name() const override
   { return "ready_trigger_event"; }
@@ -93,12 +97,16 @@ timespan_t cooldown_t::cooldown_duration( const cooldown_t* cd,
   {
     ret = override_duration;
   }
+  else if ( cd->action )
+  {
+    ret = cd->action->cooldown_base_duration( *cd );
+  }
   else
   {
-    ret = cd -> duration;
+    ret = cd->duration;
   }
 
-  ret *= cd -> recharge_multiplier;
+  ret *= cd->recharge_multiplier;
 
   return ret;
 }
@@ -172,7 +180,7 @@ void cooldown_t::adjust_recharge_multiplier()
     {
       timespan_t duration_ = recharge_event_t::cast( recharge_event ) -> duration_;
       event_t::cancel( recharge_event );
-      recharge_event = new ( sim ) recharge_event_t( this, new_remains, duration_ );
+      recharge_event = make_event<recharge_event_t>( sim, this, new_remains, duration_ );
     }
     else
     {
@@ -222,7 +230,7 @@ void cooldown_t::adjust( timespan_t amount, bool require_reaction )
     {
       timespan_t duration_ = recharge_event_t::cast( recharge_event ) -> duration_;
       event_t::cancel( recharge_event );
-      recharge_event = new ( sim ) recharge_event_t( this, remains, duration_ );
+      recharge_event = make_event<recharge_event_t>( sim, this, remains, duration_ );
 
       // If we have no charges, adjust ready time to the new occurrence time
       // of the recharge event, plus a millisecond
@@ -251,7 +259,7 @@ void cooldown_t::adjust( timespan_t amount, bool require_reaction )
         timespan_t new_duration = cooldown_duration( this, duration_ );
         new_duration += remains;
 
-        recharge_event = new ( sim ) recharge_event_t( this, new_duration, duration_ );
+        recharge_event = make_event<recharge_event_t>( sim, this, new_duration, duration_ );
       }
 
       if ( sim.debug )
@@ -263,6 +271,11 @@ void cooldown_t::adjust( timespan_t amount, bool require_reaction )
           ready.total_seconds() );
       }
     }
+  }
+
+  if ( player -> queueing && player -> queueing -> cooldown == this )
+  {
+    player -> queueing -> reschedule_queue_event();
   }
 }
 
@@ -351,7 +364,7 @@ void cooldown_t::start( action_t* a, timespan_t _override, timespan_t delay )
     // Begin a recharge event
     if ( ! recharge_event )
     {
-      recharge_event = new ( sim ) recharge_event_t( this, event_duration, _override );
+      recharge_event = make_event<recharge_event_t>( sim, this, event_duration, _override );
     }
 
     // No charges left, the cooldown won't be ready until a recharge event
@@ -372,7 +385,7 @@ void cooldown_t::start( action_t* a, timespan_t _override, timespan_t delay )
 
   assert( player );
   if ( player -> ready_type == READY_TRIGGER )
-    ready_trigger_event = new ( sim ) ready_trigger_event_t( *player, this );
+    ready_trigger_event = make_event<ready_trigger_event_t>( sim, *player, this );
 }
 
 void cooldown_t::start( timespan_t _override, timespan_t delay )
@@ -389,28 +402,45 @@ expr_t* cooldown_t::create_expression( action_t*, const std::string& name_str )
   else if ( name_str == "up" || name_str == "ready" )
     return make_mem_fn_expr( name_str, *this, &cooldown_t::up );
   else if ( name_str == "charges" )
-    return make_ref_expr( name_str, current_charge );
+  {
+    return make_fn_expr( name_str, [ this ]() {
+      if ( charges <= 1 )
+      {
+        return up() ? 1.0 : 0.0;
+      }
+      else
+      {
+        return as<double>( current_charge );
+      }
+    } );
+  }
   else if ( name_str == "charges_fractional" )
   {
-    struct charges_fractional_expr_t : public expr_t
-    {
-      const cooldown_t* cd;
-      charges_fractional_expr_t( const cooldown_t* c ) :
-        expr_t( "charges_fractional" ), cd( c )
-      { }
-
-      virtual double evaluate() override
+    return make_fn_expr( name_str, [ this ]() {
+      if ( charges > 1 )
       {
-        double charges = cd -> current_charge;
-        if ( cd -> recharge_event )
+        double charges = current_charge;
+        if ( recharge_event )
         {
-          recharge_event_t* re = debug_cast<recharge_event_t*>( cd -> recharge_event );
+          recharge_event_t* re = debug_cast<recharge_event_t*>( recharge_event );
           charges += 1 - ( re -> remains() / re -> event_duration_ );
         }
         return charges;
       }
-    };
-    return new charges_fractional_expr_t( this );
+      else
+      {
+        if ( up() )
+        {
+          return 1.0;
+        }
+        else
+        {
+          timespan_t duration = ready - last_start,
+                     elapsed  = sim.current_time() - last_start;
+          return elapsed / duration;
+        }
+      }
+    } );
   }
   else if ( name_str == "recharge_time" )
   {
@@ -430,6 +460,28 @@ expr_t* cooldown_t::create_expression( action_t*, const std::string& name_str )
       }
     };
     return new recharge_time_expr_t( this );
+  }
+  else if ( name_str == "full_recharge_time" )
+  {
+    struct full_recharge_time_expr_t : public expr_t
+    {
+      const cooldown_t* cd;
+      full_recharge_time_expr_t( const cooldown_t* c ) :
+        expr_t( "full_recharge_time" ), cd( c )
+      { }
+
+      virtual double evaluate() override
+      {
+        if ( cd -> recharge_event )
+        {
+          return cd -> current_charge_remains().total_seconds() +
+            ( cd -> charges - cd -> current_charge - 1 ) * cd -> duration.total_seconds();
+        }
+        else
+          return 0;
+      }
+    };
+    return new full_recharge_time_expr_t( this );
   }
   else if ( name_str == "max_charges" )
     return make_ref_expr( name_str, charges );

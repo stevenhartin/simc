@@ -3,8 +3,8 @@
 // Send questions to natehieter@gmail.com
 // ==========================================================================
 
-#include "simulationcraft.hpp"
 #include "sc_report.hpp"
+#include "simulationcraft.hpp"
 
 namespace
 {  // UNNAMED NAMESPACE ==========================================
@@ -115,9 +115,6 @@ void print_text_action( FILE* file, stats_t* s, int max_name_length,
 
 void print_text_actions( FILE* file, player_t* p )
 {
-  if ( !p->glyphs_str.empty() )
-    util::fprintf( file, "  Glyphs: %s\n", p->glyphs_str.c_str() );
-
   for ( unsigned int idx = 0; idx < p->action_priority_list.size(); idx++ )
   {
     action_priority_list_t* alist = p->action_priority_list[ idx ];
@@ -323,13 +320,14 @@ void print_text_generic_stats( FILE* file, player_t* p )
       file,
       "  Generic Stats: mastery=%.2f%%|%.2f%%(%.0f)  "
       "versatility=%.2f%%|%.2f%%(%.0f)  "
-      "leech=%.2f%%|%.2f%%(%.0f)\n",
+      "leech=%.2f%%|%.2f%%(%.0f)  "
+      "runspeed=%.2f%%|%.2f%%(%.0f)\n",
       100.0 * buffed_stats.mastery_value, 100.0 * p->cache.mastery_value(),
-      p->composite_mastery_rating(),
-      100 * buffed_stats.damage_versatility,
+      p->composite_mastery_rating(), 100 * buffed_stats.damage_versatility,
       100 * p->composite_damage_versatility(),
       p->composite_damage_versatility_rating(), 100 * buffed_stats.leech,
-      100 * p->composite_leech(), p->composite_leech_rating() );
+      100 * p->composite_leech(), p->composite_leech_rating(),
+      buffed_stats.run_speed, p -> composite_movement_speed(), p -> composite_speed_rating() );
 }
 
 // print_text_spell_stats ===================================================
@@ -348,8 +346,8 @@ void print_text_spell_stats( FILE* file, player_t* p )
                                     p->composite_spell_power_multiplier(),
       p->initial.stats.spell_power, 100 * buffed_stats.spell_hit,
       100 * p->composite_spell_hit(), p->composite_spell_hit_rating(),
-      100 * buffed_stats.spell_crit_chance, 100 * p->composite_spell_crit_chance(),
-      p->composite_spell_crit_rating(),
+      100 * buffed_stats.spell_crit_chance,
+      100 * p->composite_spell_crit_chance(), p->composite_spell_crit_rating(),
       100 * ( 1 / buffed_stats.spell_haste - 1 ),
       100 * ( 1 / p->composite_spell_haste() - 1 ),
       p->composite_spell_haste_rating(),
@@ -375,7 +373,8 @@ void print_text_attack_stats( FILE* file, player_t* p )
                                        p->composite_attack_power_multiplier(),
         p->initial.stats.attack_power, 100 * buffed_stats.attack_hit,
         100 * p->composite_melee_hit(), p->composite_melee_hit_rating(),
-        100 * buffed_stats.attack_crit_chance, 100 * p->composite_melee_crit_chance(),
+        100 * buffed_stats.attack_crit_chance,
+        100 * p->composite_melee_crit_chance(),
         p->composite_melee_crit_rating(),
         100 * buffed_stats.mh_attack_expertise,
         100 * p->composite_melee_expertise( &( p->main_hand_weapon ) ),
@@ -397,7 +396,8 @@ void print_text_attack_stats( FILE* file, player_t* p )
                                        p->composite_attack_power_multiplier(),
         p->initial.stats.attack_power, 100 * buffed_stats.attack_hit,
         100 * p->composite_melee_hit(), p->composite_melee_hit_rating(),
-        100 * buffed_stats.attack_crit_chance, 100 * p->composite_melee_crit_chance(),
+        100 * buffed_stats.attack_crit_chance,
+        100 * p->composite_melee_crit_chance(),
         p->composite_melee_crit_rating(),
         100 * buffed_stats.mh_attack_expertise,
         100 * p->composite_melee_expertise( &( p->main_hand_weapon ) ),
@@ -629,26 +629,31 @@ void print_text_iteration_data( FILE* file, sim_t* sim )
   util::fprintf( file, "\nIteration data:\n" );
   if ( sim->low_iteration_data.size() && sim->high_iteration_data.size() )
   {
+    util::fprintf(
+        file,
+        ".--------------------------------------------------------%s. "
+        ".--------------------------------------------------------%s.\n",
+        spacer_str_1.c_str(), spacer_str_1.c_str() );
+    util::fprintf(
+        file,
+        "| Low Iteration Data                                     %s| | High "
+        "Iteration Data                                    %s|\n",
+        spacer_str_2.c_str(), spacer_str_2.c_str() );
+    util::fprintf(
+        file,
+        "+--------+-----------+----------------------+------------%s+ "
+        "+--------+-----------+----------------------+------------%s+\n",
+        spacer_str_1.c_str(), spacer_str_1.c_str() );
     util::fprintf( file,
-                   ".--------------------------------------------------------%s. "
-                   ".--------------------------------------------------------%s.\n",
-                   spacer_str_1.c_str(), spacer_str_1.c_str() );
-    util::fprintf( file,
-                   "| Low Iteration Data                                     %s| | High "
-                   "Iteration Data                                    %s|\n",
-                   spacer_str_2.c_str(), spacer_str_2.c_str() );
-    util::fprintf( file,
-                   "+--------+-----------+----------------------+------------%s+ "
-                   "+--------+-----------+----------------------+------------%s+\n",
-                   spacer_str_1.c_str(), spacer_str_1.c_str() );
-    util::fprintf( file,
-                   "|  Iter# |    Metric |                 Seed |  %sHealth(s) | |  Iter# |    "
+                   "|  Iter# |    Metric |                 Seed |  %sHealth(s) "
+                   "| |  Iter# |    "
                    "Metric |                 Seed |  %sHealth(s) |\n",
                    spacer_str_2.c_str(), spacer_str_2.c_str() );
-    util::fprintf( file,
-                   "+--------+-----------+----------------------+------------%s+ "
-                   "+--------+-----------+----------------------+------------%s+\n",
-                   spacer_str_1.c_str(), spacer_str_1.c_str() );
+    util::fprintf(
+        file,
+        "+--------+-----------+----------------------+------------%s+ "
+        "+--------+-----------+----------------------+------------%s+\n",
+        spacer_str_1.c_str(), spacer_str_1.c_str() );
 
     for ( size_t i = 0; i < sim->low_iteration_data.size(); i++ )
     {
@@ -671,7 +676,8 @@ void print_text_iteration_data( FILE* file, sim_t* sim )
       }
 
       util::fprintf(
-          file, "| %6llu | %9.1f | %20llu | %s | | %6llu | %9.1f | %20llu | %s |\n",
+          file,
+          "| %6llu | %9.1f | %20llu | %s | | %6llu | %9.1f | %20llu | %s |\n",
           sim->low_iteration_data[ i ].iteration,
           sim->low_iteration_data[ i ].metric,
           sim->low_iteration_data[ i ].seed, low_health_s.str().c_str(),
@@ -679,10 +685,11 @@ void print_text_iteration_data( FILE* file, sim_t* sim )
           sim->high_iteration_data[ i ].metric,
           sim->high_iteration_data[ i ].seed, high_health_s.str().c_str() );
     }
-    util::fprintf( file,
-                   "'--------+-----------+----------------------+------------%s' "
-                   "'--------+-----------+----------------------+------------%s'\n",
-                   spacer_str_1.c_str(), spacer_str_1.c_str() );
+    util::fprintf(
+        file,
+        "'--------+-----------+----------------------+------------%s' "
+        "'--------+-----------+----------------------+------------%s'\n",
+        spacer_str_1.c_str(), spacer_str_1.c_str() );
   }
   else
   {
@@ -736,11 +743,27 @@ void print_text_performance( FILE* file, sim_t* sim )
   char date_str[ sizeof "2011-10-08 07:07:09+0000" ];
   std::strftime( date_str, sizeof date_str, "%Y-%m-%d %H:%M:%S%z",
                  std::localtime( &cur_time ) );
+  std::stringstream iterations_str;
+  if ( sim -> threads > 1 )
+  {
+    iterations_str << " (";
+    for ( size_t i = 0; i < sim -> work_per_thread.size(); ++i )
+    {
+      iterations_str << sim -> work_per_thread[ i ];
+
+      if ( i < sim -> work_per_thread.size() - 1 )
+      {
+        iterations_str << ", ";
+      }
+    }
+    iterations_str << ")";
+  }
+
   util::fprintf(
       file,
       "\nBaseline Performance:\n"
       "  RNG Engine    = %s%s\n"
-      "  Iterations    = %d\n"
+      "  Iterations    = %d%s\n"
       "  TotalEvents   = %lu\n"
       "  MaxEventQueue = %lu\n"
 #ifdef EVENT_QUEUE_DEBUG
@@ -756,7 +779,9 @@ void print_text_performance( FILE* file, sim_t* sim )
       "  SpeedUp       = %.0f\n"
       "  EndTime       = %s (%.0f)\n\n",
       sim->rng().name(), sim->deterministic ? " (deterministic)" : "",
-      sim->iterations, sim->event_mgr.total_events_processed,
+      sim->iterations,
+      sim -> threads > 1 ? iterations_str.str().c_str() : "",
+      sim->event_mgr.total_events_processed,
       sim->event_mgr.max_events_remaining,
 #ifdef EVENT_QUEUE_DEBUG
       sim->event_mgr.n_allocated_events, sim->event_mgr.n_end_insert,
@@ -837,7 +862,7 @@ void print_text_scale_factors( FILE* file, sim_t* sim )
   for ( int i = 0; i < num_players; i++ )
   {
     player_t* p = sim->players_by_name[ i ];
-    int length = (int)strlen( p->name() );
+    int length  = (int)strlen( p->name() );
     if ( length > max_length )
       max_length = length;
   }
@@ -850,17 +875,17 @@ void print_text_scale_factors( FILE* file, sim_t* sim )
 
     scale_metric_e sm = p->sim->scaling->scaling_metric;
     gear_stats_t& sf  = ( sim->scaling->normalize_scale_factors )
-                           ? p->scaling_normalized[ sm ]
-                           : p->scaling[ sm ];
+                           ? p->scaling->scaling_normalized[ sm ]
+                           : p->scaling->scaling[ sm ];
 
     for ( stat_e j = STAT_NONE; j < STAT_MAX; j++ )
     {
-      if ( p->scales_with[ j ] )
+      if ( p->scaling->scales_with[ j ] )
       {
         util::fprintf( file, "  %s=%.*f(%.*f)", util::stat_type_abbrev( j ),
                        sim->report_precision, sf.get_stat( j ),
                        sim->report_precision,
-                       p->scaling_error[ sm ].get_stat( j ) );
+                       p->scaling->scaling_error[ sm ].get_stat( j ) );
       }
     }
 
@@ -868,12 +893,12 @@ void print_text_scale_factors( FILE* file, sim_t* sim )
       util::fprintf( file, "  DPS/%s=%.*f",
                      util::stat_type_abbrev( p->normalize_by() ),
                      sim->report_precision,
-                     p->scaling[ sm ].get_stat( p->normalize_by() ) );
+                     p->scaling->scaling[ sm ].get_stat( p->normalize_by() ) );
 
     if ( p->sim->scaling->scale_lag )
       util::fprintf( file, "  ms Lag=%.*f(%.*f)", p->sim->report_precision,
-                     p->scaling_lag[ sm ], p->sim->report_precision,
-                     p->scaling_lag_error[ sm ] );
+                     p->scaling->scaling_lag[ sm ], p->sim->report_precision,
+                     p->scaling->scaling_lag_error[ sm ] );
 
     util::fprintf( file, "\n" );
   }
@@ -887,6 +912,9 @@ void print_text_scale_factors( FILE* file, player_t* p,
   if ( !p->sim->scaling->has_scale_factors() )
     return;
 
+  if ( p->scaling == nullptr )
+    return;
+
   if ( p->sim->report_precision < 0 )
     p->sim->report_precision = 2;
 
@@ -894,18 +922,18 @@ void print_text_scale_factors( FILE* file, player_t* p,
 
   scale_metric_e sm = p->sim->scaling->scaling_metric;
   gear_stats_t& sf  = ( p->sim->scaling->normalize_scale_factors )
-                         ? p->scaling_normalized[ sm ]
-                         : p->scaling[ sm ];
+                         ? p->scaling->scaling_normalized[ sm ]
+                         : p->scaling->scaling[ sm ];
 
   util::fprintf( file, "    Weights :" );
   for ( stat_e i = STAT_NONE; i < STAT_MAX; i++ )
   {
-    if ( p->scales_with[ i ] )
+    if ( p->scaling->scales_with[ i ] )
     {
       util::fprintf( file, "  %s=%.*f(%.*f)", util::stat_type_abbrev( i ),
                      p->sim->report_precision, sf.get_stat( i ),
                      p->sim->report_precision,
-                     p->scaling_error[ sm ].get_stat( i ) );
+                     p->scaling->scaling_error[ sm ].get_stat( i ) );
     }
   }
   if ( p->sim->scaling->normalize_scale_factors )
@@ -913,12 +941,12 @@ void print_text_scale_factors( FILE* file, player_t* p,
     util::fprintf( file, "  DPS/%s=%.*f",
                    util::stat_type_abbrev( p->normalize_by() ),
                    p->sim->report_precision,
-                   p->scaling[ sm ].get_stat( p->normalize_by() ) );
+                   p->scaling->scaling[ sm ].get_stat( p->normalize_by() ) );
   }
   if ( p->sim->scaling->scale_lag )
     util::fprintf( file, "  ms Lag=%.*f(%.*f)", p->sim->report_precision,
-                   p->scaling_lag[ sm ], p->sim->report_precision,
-                   p->scaling_lag_error[ sm ] );
+                   p->scaling->scaling_lag[ sm ], p->sim->report_precision,
+                   p->scaling->scaling_lag_error[ sm ] );
 
   util::fprintf( file, "\n" );
 
@@ -991,7 +1019,7 @@ void print_text_reference_dps( FILE* file, sim_t* sim )
   for ( int i = 0; i < num_players; i++ )
   {
     player_t* p = sim->players_by_dps[ i ];
-    int length = (int)strlen( p->name() );
+    int length  = (int)strlen( p->name() );
     if ( length > max_length )
       max_length = length;
   }
@@ -1003,11 +1031,11 @@ void print_text_reference_dps( FILE* file, sim_t* sim )
   {
     for ( stat_e j = STAT_NONE; j < STAT_MAX; j++ )
     {
-      if ( ref_p->scales_with[ j ] )
+      if ( ref_p->scaling->scales_with[ j ] )
       {
         util::fprintf( file, "  %s=%.*f", util::stat_type_abbrev( j ),
                        sim->report_precision,
-                       ref_p->scaling[ sm ].get_stat( j ) );
+                       ref_p->scaling->scaling[ sm ].get_stat( j ) );
       }
     }
   }
@@ -1035,10 +1063,10 @@ void print_text_reference_dps( FILE* file, sim_t* sim )
       {
         for ( stat_e j = STAT_NONE; j < STAT_MAX; j++ )
         {
-          if ( ref_p->scales_with[ j ] )
+          if ( ref_p->scaling->scales_with[ j ] )
           {
-            double ref_sf = ref_p->scaling[ sm ].get_stat( j );
-            double sf     = p->scaling[ sm ].get_stat( j );
+            double ref_sf = ref_p->scaling->scaling[ sm ].get_stat( j );
+            double sf     = p->scaling->scaling[ sm ].get_stat( j );
 
             over = ( sf > ref_sf );
 

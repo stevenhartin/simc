@@ -37,9 +37,9 @@ parser.add_argument("--suffix",      dest = "suffix",       default = '',
                     help = "Data structure suffix string")
 parser.add_argument("--min-ilvl",    dest = "min_ilevel",   default = 90, type = int,
                     help = "Minimum inclusive ilevel for item-related extraction")
-parser.add_argument("--max-ilvl",    dest = "max_ilevel",   default = 940, type = int,
+parser.add_argument("--max-ilvl",    dest = "max_ilevel",   default = 1300, type = int,
                     help = "Maximum inclusive ilevel for item-related extraction")
-parser.add_argument("--scale-ilvl",  dest = "scale_ilevel", default = 1000, type = int,
+parser.add_argument("--scale-ilvl",  dest = "scale_ilevel", default = 1300, type = int,
                     help = "Maximum inclusive ilevel for game table related extraction")
 parser.add_argument("--as",          dest = "as_dbc",       default = '',
                     help = "Treat given DBC file as this option" )
@@ -55,8 +55,8 @@ options = parser.parse_args()
 if options.build == 0 and options.type != 'header':
     parser.error('-b is a mandatory parameter for extraction type "%s"' % options.type)
 
-if options.min_ilevel < 0 or options.max_ilevel > 999:
-    parser.error('--min/max-ilevel range is 0..999')
+if options.min_ilevel < 0 or options.max_ilevel > 1300:
+    parser.error('--min/max-ilevel range is 0..1300')
 
 if options.level % 5 != 0 or options.level > 115:
     parser.error('-l must be given as a multiple of 5 and be smaller than 100')
@@ -66,9 +66,6 @@ if options.type == 'view' and len(options.args) == 0:
 
 if options.type == 'header' and len(options.args) == 0:
     parser.error('Header parsing requires at least a single DBC file to parse it from')
-
-if options.cache_dir and not os.path.isdir(options.cache_dir):
-    parser.error('Invalid cache directory %s' % options.cache_dir)
 
 if options.debug:
     logging.getLogger().setLevel(logging.DEBUG)
@@ -421,6 +418,12 @@ elif options.type == 'scale':
         sys.exit(1)
     g.generate()
 
+    combat_rating_values = [ 'Rating Multiplier' ]
+    # CombatRatingsMultByILvl.txt gets more complicated starting 7.1.5,
+    # earliest build published to the public is 23038 on PTR
+    if options.build >= 23038:
+        combat_rating_values = [ 'Armor Multiplier', 'Weapon Multiplier', 'Trinket Multiplier', 'Jewelry Multiplier' ]
+
     g = dbc.generator.CSVDataGenerator(options, [ {
         'file': 'ItemSocketCostPerLevel.txt',
         'key': '5.0 Level',
@@ -433,7 +436,7 @@ elif options.type == 'scale':
         'key': 'Item Level',
         'comment': '// Combat rating multipliers for item level 1 - %d, wow build %d\n' % (
             options.max_ilevel, options.build),
-        'values': [ 'Rating Multiplier' ],
+        'values': combat_rating_values,
         'max_rows': options.max_ilevel
     }])
     if not g.initialize():

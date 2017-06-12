@@ -456,16 +456,13 @@ bool parse_armory( sim_t*             sim,
       if ( name == "wowhead" )
       {
         sim -> errorf( "Wowhead profiler currently not support. "
-                       "Wowhead profiler does not provide spec, talent or glyph data.\n" );
+                       "Wowhead profiler does not provide spec or talent data.\n" );
         return false;
 
         //p = wowhead::download_player( sim, stuff.region, stuff.server, player_name, description, wowhead::LIVE, stuff.cache );
       }
       else if ( name == "local_json" )
         p = bcp_api::from_local_json( sim, player_name, stuff.server, description );
-      else if ( name == "armory_html" )
-        p = bcp_api::download_player_html( sim, stuff.region, stuff.server,
-                                           player_name, description, stuff.cache );
       else
         p = bcp_api::download_player( sim, stuff.region, stuff.server,
                                       player_name, description, stuff.cache );
@@ -638,9 +635,9 @@ bool parse_fight_style( sim_t*             sim,
     sim -> fight_style = "HecticAddCleave";
 
     sim -> raid_events_str += "/adds,count=5,first=" + util::to_string( int( sim -> max_time.total_seconds() * 0.05 ) ) + ",cooldown=" + util::to_string( int( sim -> max_time.total_seconds() * 0.075 ) ) + ",duration=" + util::to_string( int( sim -> max_time.total_seconds() * 0.05 ) ) + ",last=" + util::to_string( int( sim -> max_time.total_seconds() * 0.75 ) ); //P1
-      
+
     sim -> raid_events_str += "/movement,first=" + util::to_string( int( sim -> max_time.total_seconds() * 0.05 ) ) + ",cooldown=" + util::to_string( int( sim -> max_time.total_seconds() * 0.075 ) ) + ",distance=25,last=" + util::to_string( int( sim -> max_time.total_seconds() * 0.75 ) ); //move to new position of adds
-      
+
     sim -> raid_events_str += "/movement,players_only=1,first=" + util::to_string( int( sim -> max_time.total_seconds() * 0.03 ) ) + ",cooldown=" + util::to_string( int( sim -> max_time.total_seconds() * 0.04 ) ) + ",distance=8"; //move out of stuff
 
   }
@@ -652,9 +649,13 @@ bool parse_fight_style( sim_t*             sim,
     sim -> raid_events_str += "/movement,first=13,distance=5,cooldown=20,players_only=1,player_chance=0.1";
     sim -> raid_events_str += "/adds,name=Beast,count=1,first=10,duration=" + util::to_string( int( sim -> max_time.total_seconds() * 0.15 ) ) + ",cooldown=" + util::to_string( int( sim -> max_time.total_seconds() * 0.25 ) ) + ",last=" + util::to_string( int( sim -> max_time.total_seconds() * 0.65 ) ) + ",duration_stddev=5,cooldown_stddev=10";
   }
+  else if ( util::str_compare_ci( value, "CastingPatchwerk" ) )
+  {
+    sim->fight_style = "CastingPatchwerk";
+    sim->raid_events_str += "/casting,cooldown=500,duration=500";
+  }
   else
   {
-    std::cout << "Custom fight style specified: " << value << std::endl;
     sim -> fight_style = value;
   }
 
@@ -701,6 +702,14 @@ bool parse_override_spell_data( sim_t*             sim,
   else if ( util::str_compare_ci( splits[ 0 ], "effect" ) )
   {
     if ( ! dbc_override::register_effect( sim -> dbc, id, splits[ 2 ], v ) )
+    {
+      return false;
+    }
+    return true;
+  }
+  else if ( util::str_compare_ci( splits[ 0 ], "power" ) )
+  {
+    if ( ! dbc_override::register_power( sim -> dbc, id, splits[ 2 ], v ) )
     {
       return false;
     }
@@ -905,10 +914,9 @@ struct proxy_cast_check_t : public event_t
   timespan_t duration;
 
   proxy_cast_check_t( sim_t& s, int u, timespan_t st, timespan_t i, timespan_t cd, timespan_t d, const int& o ) :
-    event_t( s ),
+    event_t( s, i ),
     uses( u ), _override( o ), start_time( st ), cooldown( cd ), duration( d )
   {
-    add_event( i );
   }
   virtual const char* name() const override
   { return "proxy_cast_check"; }
@@ -957,9 +965,8 @@ struct proxy_cast_check_t : public event_t
 struct sim_end_event_t : event_t
 {
   sim_end_event_t( sim_t& s, timespan_t end_time ) :
-    event_t( s )
+    event_t( s, end_time )
   {
-    add_event( end_time );
   }
   virtual const char* name() const override
   { return "sim_end_expected_time"; }
@@ -990,9 +997,8 @@ struct sim_safeguard_end_event_t : public sim_end_event_t
 struct resource_timeline_collect_event_t : public event_t
 {
   resource_timeline_collect_event_t( sim_t& s ) :
-    event_t( s )
+    event_t( s, timespan_t::from_seconds( 1 ) )
   {
-    add_event( timespan_t::from_seconds( 1 ) );
   }
   virtual const char* name() const override
   { return "resource_timeline_collect_event_t"; }
@@ -1014,7 +1020,7 @@ struct resource_timeline_collect_event_t : public event_t
       else
       {
         auto p = sim().player_no_pet_list[ sim().current_index ];
-        if ( p -> primary_resource() != RESOURCE_NONE )
+        if (p && p -> primary_resource() != RESOURCE_NONE)
         {
           p -> collect_resource_timeline_information();
           for ( auto pet : p -> pet_list )
@@ -1035,21 +1041,24 @@ struct resource_timeline_collect_event_t : public event_t
       }
     }
 
-    new ( sim() ) resource_timeline_collect_event_t( sim() );
+    make_event<resource_timeline_collect_event_t>( sim(), sim() );
   }
 };
 
 struct regen_event_t : public event_t
 {
   regen_event_t( sim_t& s ) :
-    event_t( s )
+    event_t( s, s.regen_periodicity )
   {
-    if ( sim().debug ) sim().out_debug.printf( "New Regen Event" );
-
-    add_event( sim().regen_periodicity );
+    if ( sim().debug )
+    {
+      sim().out_debug.printf( "New Regen Event" );
+    }
   }
+
   virtual const char* name() const override
   { return "Regen Event"; }
+
   virtual void execute() override
   {
     if ( ! sim().single_actor_batch )
@@ -1067,13 +1076,13 @@ struct regen_event_t : public event_t
     else
     {
       auto p = sim().player_no_pet_list[ sim().current_index ];
-      if ( p -> primary_resource() != RESOURCE_NONE && p -> regen_type == REGEN_STATIC )
+      if ( p && p -> primary_resource() != RESOURCE_NONE && p -> regen_type == REGEN_STATIC )
       {
         p -> regen( sim().regen_periodicity );
         for ( auto pet : p -> pet_list )
         {
           if ( ! pet -> is_sleeping() && p -> primary_resource() != RESOURCE_NONE &&
-               p -> regen_type == REGEN_STATIC )
+            p -> regen_type == REGEN_STATIC )
           {
             pet -> regen( sim().regen_periodicity );
           }
@@ -1081,7 +1090,7 @@ struct regen_event_t : public event_t
       }
     }
 
-    new ( sim() ) regen_event_t( sim() );
+    make_event<regen_event_t>( sim(), sim() );
   }
 };
 
@@ -1151,7 +1160,7 @@ std::string get_api_key()
     }
     else
     {
-      std::cerr << "Blizzard API Key '" << line << "' from file '" << filename << "was not properly entered." << std::endl;
+      std::cerr << "Blizzard API Key '" << line << "' from file '" << filename << "' was not properly entered." << std::endl;
     }
   }
 
@@ -1165,9 +1174,8 @@ std::string get_api_key()
 struct bloodlust_check_t : public event_t
  {
    bloodlust_check_t( sim_t& sim ) :
-     event_t( sim )
+     event_t( sim, timespan_t::from_seconds( 1.0 ) )
    {
-     add_event( timespan_t::from_seconds( 1.0 ) );
    }
 
    virtual const char* name() const override
@@ -1196,13 +1204,16 @@ struct bloodlust_check_t : public event_t
        else
        {
          auto p = sim.player_no_pet_list[ sim.current_index ];
-         p -> buffs.bloodlust -> trigger();
-         p -> buffs.exhaustion -> trigger();
+         if ( p )
+         {
+           p -> buffs.bloodlust -> trigger();
+           p -> buffs.exhaustion -> trigger();
+         }
        }
      }
      else
      {
-       new ( sim ) bloodlust_check_t( sim );
+      make_event<bloodlust_check_t>( sim, sim );
      }
    }
  };
@@ -1320,6 +1331,7 @@ sim_t::sim_t( sim_t* p, int index ) :
   current_error( 0 ),
   current_mean( 0 ),
   analyze_error_interval( 100 ),
+  analyze_number( 0 ),
   control( nullptr ),
   parent( p ),
   initialized( false ),
@@ -1339,7 +1351,7 @@ sim_t::sim_t( sim_t* p, int index ) :
   queue_lag( timespan_t::from_seconds( 0.005 ) ), queue_lag_stddev( timespan_t::zero() ),
   gcd_lag( timespan_t::from_seconds( 0.150 ) ), gcd_lag_stddev( timespan_t::zero() ),
   channel_lag( timespan_t::from_seconds( 0.250 ) ), channel_lag_stddev( timespan_t::zero() ),
-  queue_gcd_reduction( timespan_t::from_seconds( 0.032 ) ),
+  queue_gcd_reduction( timespan_t::from_seconds( 0.1 ) ),
   default_cooldown_tolerance( timespan_t::from_millis( 250 ) ),
   strict_gcd_queue( 0 ),
   confidence( 0.95 ), confidence_estimator( 0.0 ),
@@ -1357,12 +1369,16 @@ sim_t::sim_t( sim_t* p, int index ) :
   talent_format( TALENT_FORMAT_UNCHANGED ),
   auto_ready_trigger( 0 ), stat_cache( 1 ), max_aoe_enemies( 20 ), show_etmi( 0 ), tmi_window_global( 0 ), tmi_bin_size( 0.5 ),
   requires_regen_event( false ), single_actor_batch( false ),
-  enemy_death_pct( 0 ), rel_target_level( -1 ), target_level( -1 ), target_adds( 0 ), desired_targets( 0 ), enable_taunts( false ),
+  progressbar_type( 0 ),
+  armory_retries( 3 ),
+  enemy_death_pct( 0 ), rel_target_level( -1 ), target_level( -1 ),
+  target_adds( 0 ), desired_targets( 1 ), enable_taunts( false ),
+  use_item_verification( true ),
   challenge_mode( false ), timewalk( -1 ), scale_to_itemlevel( -1 ), scale_itemlevel_down_only( false ), disable_artifacts( false ),
   disable_set_bonuses( false ), disable_2_set( 1 ), disable_4_set( 1 ), enable_2_set( 1 ), enable_4_set( 1 ),
   pvp_crit( false ),
   active_enemies( 0 ), active_allies( 0 ),
-  _rng(), seed( 0 ), deterministic( false ),
+  _rng(), seed( 0 ), deterministic( 0 ), strict_work_queue( 0 ),
   average_range( true ), average_gauss( false ),
   convergence_scale( 2 ),
   fight_style( "Patchwerk" ), add_waves( 0 ), overrides( overrides_t() ),
@@ -1374,6 +1390,7 @@ sim_t::sim_t( sim_t* p, int index ) :
   reforge_plot( new reforge_plot_t( this ) ),
   elapsed_cpu( 0.0 ),
   elapsed_time( 0.0 ),
+  work_done( 0 ),
   iteration_dmg( 0 ), priority_iteration_dmg( 0 ), iteration_heal( 0 ), iteration_absorb( 0 ),
   raid_dps(), total_dmg(), raid_hps(), total_heal(), total_absorb(), raid_aps(),
   simulation_length( "Simulation Length", false ),
@@ -1388,11 +1405,11 @@ sim_t::sim_t( sim_t* p, int index ) :
   allow_potions( true ),
   allow_food( true ),
   allow_flasks( true ),
+  allow_augmentations( true ),
   solo_raid( false ),
   global_item_upgrade_level( 0 ),
   maximize_reporting( false ),
   apikey( get_api_key() ),
-  ilevel_raid_report( false ),
   distance_targeting_enabled( false ),
   enable_dps_healing( false ),
   scaling_normalized( 1.0 ),
@@ -1402,8 +1419,8 @@ sim_t::sim_t( sim_t* p, int index ) :
   spell_query(), spell_query_level( MAX_LEVEL ),
   pause_mutex( nullptr ),
   paused( false ),
-  output_relative_difference( false ),
-  boxplot_percentile( .25 ),
+  chart_show_relative_difference( false ),
+  chart_boxplot_percentile( .25 ),
   display_hotfixes( false ),
   disable_hotfixes( false ),
   display_bonus_ids( false )
@@ -1411,7 +1428,7 @@ sim_t::sim_t( sim_t* p, int index ) :
   item_db_sources.assign( std::begin( default_item_db_sources ),
                           std::end( default_item_db_sources ) );
 
-  max_time = timespan_t::from_seconds( 450 );
+  max_time = timespan_t::from_seconds( 300 );
   vary_combat_length = 0.2;
   use_optimal_buffs_and_debuffs( 1 );
 
@@ -1518,13 +1535,9 @@ void sim_t::cancel()
   }
 
   work_queue -> flush();
-  if ( single_actor_batch )
-  {
-    current_index = player_no_pet_list.size();
-  }
 
   canceled = 1;
-  
+
   for (auto & relative : relatives)
   {
     relative -> cancel();
@@ -1590,13 +1603,15 @@ void sim_t::reset()
 
   expected_iteration_time = max_time * iteration_time_adjust();
 
+  analyze_number = 0;
+
   for ( auto& buff : buff_list )
     buff -> reset();
 
   for ( auto& target : target_list )
     target -> reset();
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     player_no_pet_list[ current_index ] -> reset();
     // make sure to reset pets after owner, or otherwards they may access uninitialized things from the owner
@@ -1669,8 +1684,8 @@ void sim_t::combat_begin()
   for ( size_t i = 0; i < target_list.size(); ++i )
   {
     player_t* t = target_list[ i ];
-    if ( overrides.mortal_wounds          ) t -> debuffs.mortal_wounds          -> override_buff();
-    if ( overrides.bleeding               ) t -> debuffs.bleeding               -> override_buff( 1, 1.0 );
+    if ( overrides.mortal_wounds && t -> debuffs.mortal_wounds ) t -> debuffs.mortal_wounds -> override_buff();
+    if ( overrides.bleeding && t -> debuffs.bleeding           ) t -> debuffs.bleeding      -> override_buff( 1, 1.0 );
   }
 
   for ( player_e i = PLAYER_NONE; i < PLAYER_MAX; ++i )
@@ -1681,7 +1696,7 @@ void sim_t::combat_begin()
 
   raid_event_t::combat_begin( this );
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     player_no_pet_list[ current_index ] -> combat_begin();
     for ( auto pet: player_no_pet_list[ current_index ] -> pet_list )
@@ -1699,23 +1714,23 @@ void sim_t::combat_begin()
   }
 
   if ( requires_regen_event )
-    new ( *this ) regen_event_t( *this );
+    make_event<regen_event_t>( *this, *this );
 
   if ( overrides.bloodlust )
   {
-     new ( *this ) bloodlust_check_t( *this );
+     make_event<bloodlust_check_t>( *this, *this );
   }
 
   if ( fixed_time || ( target -> resources.base[ RESOURCE_HEALTH ] == 0 ) )
   {
-    new ( *this ) sim_end_event_t( *this, expected_iteration_time );
+    make_event<sim_end_event_t>( *this, *this, expected_iteration_time );
     target -> death_pct = enemy_death_pct;
   }
   else
   {
     target -> death_pct = enemy_death_pct;
   }
-  new ( *this ) sim_safeguard_end_event_t( *this, expected_iteration_time + expected_iteration_time );
+  make_event<sim_safeguard_end_event_t>( *this, *this, expected_iteration_time + expected_iteration_time );
 }
 
 // sim_t::combat_end ========================================================
@@ -1739,7 +1754,7 @@ void sim_t::combat_end()
 
   raid_event_t::combat_end( this );
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     player_no_pet_list[ current_index ] -> combat_end();
   }
@@ -1797,7 +1812,7 @@ void sim_t::datacollection_begin()
   for ( size_t i = 0; i < buff_list.size(); ++i )
     buff_list[ i ] -> datacollection_begin();
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     player_no_pet_list[ current_index ] -> datacollection_begin();
   }
@@ -1809,7 +1824,7 @@ void sim_t::datacollection_begin()
       p -> datacollection_begin();
     }
   }
-  new ( *this ) resource_timeline_collect_event_t( *this );
+  make_event<resource_timeline_collect_event_t>( *this, *this );
 }
 
 // sim_t::datacollection_end ================================================
@@ -1827,7 +1842,7 @@ void sim_t::datacollection_end()
     t -> datacollection_end();
   }
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     player_no_pet_list[ current_index ] -> datacollection_end();
   }
@@ -1890,14 +1905,28 @@ void sim_t::analyze_error()
   if ( thread_index != 0 ) return;
   if ( target_error <= 0 ) return;
   if ( current_iteration < 1 ) return;
-  if ( current_iteration % analyze_error_interval != 0 ) return;
+
+  int n_iterations = work_queue -> progress().current_iterations;
+  if ( strict_work_queue )
+  {
+    range::for_each( children, [ &n_iterations ]( sim_t* c ) {
+      n_iterations += c -> work_queue -> progress().current_iterations;
+    } );
+  }
+
+  if ( n_iterations < analyze_error_interval * ( analyze_number + 1 ) )
+  {
+    return;
+  }
+
+  analyze_number++;
 
   double mean_total=0;
   int mean_count=0;
 
   current_error = 0;
 
-  if ( single_actor_batch && current_index < player_no_pet_list.size() )
+  if ( single_actor_batch )
   {
     auto p = player_no_pet_list[ current_index ];
     auto& cd = p -> collected_data;
@@ -1951,9 +1980,21 @@ void sim_t::analyze_error()
     }
     else
     {
-      auto progress = work_queue -> progress();
-      work_queue -> project( static_cast<int>( progress.current_iterations * ( ( current_error * current_error ) /
-        ( target_error *  target_error ) ) ) );
+      auto projected_iterations = static_cast<int>( n_iterations * ( ( current_error * current_error ) /
+          ( target_error *  target_error ) ) );
+      if ( ! strict_work_queue )
+      {
+        work_queue -> project( projected_iterations );
+      }
+      else
+      {
+        // Divide work evenly between threads
+        projected_iterations /= threads;
+        work_queue -> project( projected_iterations );
+        range::for_each( children, [ projected_iterations ]( sim_t* c ) {
+          c -> work_queue -> project( projected_iterations );
+        } );
+      }
     }
   }
 }
@@ -2140,8 +2181,6 @@ bool sim_t::init_actors()
 // critical here. Called in sim_t::init()
 bool sim_t::init_actor( player_t* p )
 {
-  bool ret = true;
-
   // initialize class/enemy modules
   for ( player_e i = PLAYER_NONE; i < PLAYER_MAX; ++i )
   {
@@ -2149,7 +2188,7 @@ bool sim_t::init_actor( player_t* p )
     if ( m ) m -> init( p );
   }
 
-  if ( default_actions && ! p -> is_pet() )
+  if ( default_actions != 0 && !p -> is_pet() )
   {
     p -> clear_action_priority_lists();
     p -> action_list_str.clear();
@@ -2170,7 +2209,7 @@ bool sim_t::init_actor( player_t* p )
   // Initialize each actor's items, construct gear information & stats
   if ( ! p -> init_items() )
   {
-    ret = false;
+    return false;
   }
 
   p -> init_artifact();
@@ -2182,13 +2221,13 @@ bool sim_t::init_actor( player_t* p )
   // actions (APLs, really) based on the presence of special effects on items.
   if ( ! p -> create_special_effects() )
   {
-    ret = false;
+    return false;
   }
 
   // First, create all the action objects and set up action lists properly
   if ( ! p -> create_actions() )
   {
-    ret = false;
+    return false;
   }
 
   // Create all actor pets before special effects get initialized. This ensures that we can use
@@ -2200,13 +2239,13 @@ bool sim_t::init_actor( player_t* p )
   // Second-phase initialize all special effects and register them to actors
   if ( ! p -> init_special_effects() )
   {
-    ret = false;
+    return false;
   }
 
   // Finally, initialize all action objects
   if ( ! p -> init_actions() )
   {
-    ret = false;
+    return false;
   }
 
   // Once all transient properties are initialized (e.g., base stats, spells, special effects,
@@ -2226,7 +2265,7 @@ bool sim_t::init_actor( player_t* p )
   p -> init_absorb_priority();
   p -> init_assessors();
 
-  return ret;
+  return true;
 }
 
 // sim_t::init_actor_pets ===================================================
@@ -2308,11 +2347,14 @@ bool sim_t::init()
   }
   else if ( timewalk > 0 )
   {
-    switch ( timewalk )
+    if ( scale_to_itemlevel != -1 )
     {
-    case 85: scale_to_itemlevel = 300; break;
-    case 80: scale_to_itemlevel = 160; break;
-    case 70: scale_to_itemlevel = 95;  break;
+      switch ( timewalk )
+      {
+        case 85: scale_to_itemlevel = 300; break;
+        case 80: scale_to_itemlevel = 160; break;
+        case 70: scale_to_itemlevel = 95;  break;
+      }
     }
     scale_itemlevel_down_only = true;
   }
@@ -2406,6 +2448,7 @@ bool sim_t::init()
   if ( ! canceled )
   {
     bool ret = true;
+    bool verify_use_items_state = true;
 
     for ( auto& actor : actor_list )
     {
@@ -2414,11 +2457,27 @@ bool sim_t::init()
       {
         ret = false;
       }
+
+      // Some verification stuff to avoid user mistakes
+
+      // .. nag if the user has not added an use_item line for each on-use item
+      if ( ! actor -> verify_use_items() )
+      {
+        verify_use_items_state = false;
+      }
+
     }
 
     if ( ! ret )
     {
       return false;
+    }
+
+    if ( ! verify_use_items_state )
+    {
+      errorf( "Disable this warning by adding 'use_item' actions into the action priority list "
+              "for the actor(s), or add \"use_item_verification=0\" to your list of options "
+              "passed to Simulationcraft." );
     }
   }
 
@@ -2437,6 +2496,8 @@ void sim_t::analyze()
 
   for ( size_t i = 0; i < buff_list.size(); ++i )
     buff_list[ i ] -> analyze();
+
+  std::cout << "Analyzing actor data ..." << std::endl;
 
   for ( size_t i = 0; i < actor_list.size(); i++ )
     actor_list[ i ] -> analyze( *this );
@@ -2486,6 +2547,37 @@ void sim_t::analyze_iteration_data()
 }
 
 
+// sim_t::set_sim_phase ===================================================
+
+void sim_t::set_sim_base_str( const std::string& str )
+{
+  sim_progress_base_str = str;
+}
+
+void sim_t::update_sim_phase_str()
+{
+  // The two-split base / phase string for progressbar is only used in single actor batch for now.
+  if ( ! single_actor_batch )
+  {
+    return;
+  }
+
+  std::stringstream phase_str;
+
+  if ( progressbar_type == 0 )
+  {
+    phase_str << player_no_pet_list[ current_index ] -> name_str << " ";
+    phase_str << ( current_index + 1 ) << "/" << player_no_pet_list.size();
+  }
+  else
+  {
+    phase_str << player_no_pet_list[ current_index ] -> name_str << '\t';
+    phase_str << ( current_index + 1 ) << '\t' << player_no_pet_list.size();
+  }
+
+  sim_progress_phase_str = phase_str.str();
+}
+
 // sim_t::iterate ===========================================================
 
 bool sim_t::iterate()
@@ -2495,57 +2587,53 @@ bool sim_t::iterate()
 
   progress_bar.init();
 
-  if ( single_actor_batch && ! parent )
-  {
-    sim_phase_str = "Generating " + player_no_pet_list[ current_index ] -> name_str;
-  }
+  update_sim_phase_str();
+
+  activate_actors();
 
   bool more_work = true;
   do
   {
     ++current_iteration;
+    ++work_done;
 
     combat();
 
-    if ( progress_bar.update() )
+    if ( progress_bar.update( false, current_index ) )
     {
-      util::fprintf( stdout, "%s %s\r", sim_phase_str.c_str(), progress_bar.status.c_str() );
-      fflush( stdout );
+      progress_bar.output( false );
     }
 
     do_pause();
     auto old_active = current_index;
-    current_index = work_queue -> pop();
-
-    if ( ! single_actor_batch )
+    if ( ! canceled )
     {
-      more_work = current_index == 0;
-    }
-    else
-    {
-      more_work = current_index < player_no_pet_list.size();
+      current_index = work_queue -> pop();
+      more_work = work_queue -> more_work();
 
-      if ( current_index != old_active && more_work )
+      if ( more_work && current_index != old_active )
       {
-        if ( ! parent )
+        if ( ! parent || scaling -> scale_stat != STAT_NONE )
         {
-          progress_bar.update( true, old_active );
+          progress_bar.update( true, static_cast<int>( old_active ) );
+          progress_bar.output( true );
           progress_bar.restart();
-          util::fprintf( stdout, "%s %s\n", sim_phase_str.c_str(), progress_bar.status.c_str() );
-          fflush( stdout );
-          sim_phase_str = "Generating " + player_no_pet_list[ current_index ] -> name_str;
         }
 
-        current_iteration = -1;
-        range::for_each( target_list, []( player_t* t ) { t -> actor_changed(); } );
+        activate_actors();
       }
     }
   } while ( more_work && ! canceled );
 
-  if ( ! canceled && progress_bar.update( true ) )
+  if ( ! canceled && progress_bar.update( true, current_index ) )
   {
-    util::fprintf( stdout, "%s %s\n", sim_phase_str.c_str(), progress_bar.status.c_str() );
-    fflush( stdout );
+    progress_bar.output( true );
+  }
+
+  // Deactivate the final actor after simulation is done in single_actor_batch
+  if ( single_actor_batch )
+  {
+    player_no_pet_list[ player_no_pet_list.size() - 1 ] -> deactivate();
   }
 
   reset();
@@ -2585,7 +2673,10 @@ void sim_t::merge( sim_t& other_sim )
 {
   auto_lock_t auto_lock( merge_mutex );
 
+  std::cout << "Merging data from thread-" << other_sim.thread_index << " ..." << std::endl;
+
   iterations += other_sim.iterations;
+  work_per_thread[ other_sim.thread_index ] = other_sim.work_done;
 
   simulation_length.merge( other_sim.simulation_length );
   total_dmg.merge( other_sim.total_dmg );
@@ -2617,6 +2708,8 @@ void sim_t::merge( sim_t& other_sim )
 /// merge all sims together
 void sim_t::merge()
 {
+  work_per_thread[ thread_index ] = work_done;
+
   if ( children.empty() )
     return;
 
@@ -2657,6 +2750,8 @@ void sim_t::partition()
   if ( iterations < threads )
     return;
 
+  thread::set_main_thread_priority();
+
   merge_mutex.lock(); // parent sim is locked until parent merge() is called
 
   int remainder = iterations % threads;
@@ -2666,7 +2761,7 @@ void sim_t::partition()
   // However, when we desire deterministic runs (for debugging) we need to force the
   // sims to each use a specific number of iterations as opposed to using shared pool of work.
 
-  if( deterministic ) 
+  if ( deterministic || strict_work_queue )
   {
     work_queue -> init( iterations );
   }
@@ -2686,7 +2781,7 @@ void sim_t::partition()
       remainder--;
     }
 
-    if( deterministic ) 
+    if( deterministic || strict_work_queue )
     {
       child -> work_queue -> init( child -> iterations );
     }
@@ -2786,6 +2881,9 @@ bool sim_t::time_to_think( timespan_t proc_time )
 expr_t* sim_t::create_expression( action_t* a,
                                   const std::string& name_str )
 {
+  if ( name_str == "initial_targets" )
+    return expr_t::create_constant( name_str, target_list.size() );
+
   if ( name_str == "time" )
     return make_ref_expr( name_str, event_mgr.current_time );
 
@@ -2845,7 +2943,8 @@ expr_t* sim_t::create_expression( action_t* a,
           }
         }
 
-        nonexecute_actors_pct = nonexecute / ( nonexecute + execute );
+        auto divisor = ( nonexecute + execute );
+        nonexecute_actors_pct = divisor != 0 ? nonexecute / divisor : 0.0;
       }
 
       double evaluate() override
@@ -2976,6 +3075,7 @@ void sim_t::create_options()
   add_option( opt_int( "max_aoe_enemies", max_aoe_enemies ) );
   add_option( opt_bool( "optimize_expressions", optimize_expressions ) );
   add_option( opt_bool( "single_actor_batch", single_actor_batch ) );
+  add_option( opt_bool( "progressbar_type", progressbar_type ) );
   // Raid buff overrides
   add_option( opt_func( "optimal_raid", parse_optimal_raid ) );
   add_option( opt_int( "override.mortal_wounds", overrides.mortal_wounds ) );
@@ -3002,12 +3102,13 @@ void sim_t::create_options()
   add_option( opt_timespan( "ignite_sampling_delta", ignite_sampling_delta ) );
   // Output
   add_option( opt_bool( "save_profiles", save_profiles ) );
-  add_option( opt_bool( "default_actions", default_actions ) );
+  add_option( opt_int( "default_actions", default_actions ) );
   add_option( opt_bool( "debug", debug ) );
   add_option( opt_bool( "debug_each", debug_each ) );
   add_option( opt_func( "debug_seed", parse_debug_seed ) );
   add_option( opt_string( "html", html_file_str ) );
   add_option( opt_string( "json", json_file_str ) );
+  add_option( opt_string( "json2", json2_file_str ) );
   add_option( opt_bool( "hosted_html", hosted_html ) );
   add_option( opt_int( "healing", healing ) );
   add_option( opt_string( "xml", xml_file_str ) );
@@ -3024,12 +3125,14 @@ void sim_t::create_options()
   add_option( opt_bool( "override.allow_potions", allow_potions ) );
   add_option( opt_bool( "override.allow_food", allow_food ) );
   add_option( opt_bool( "override.allow_flasks", allow_flasks ) );
+  add_option( opt_bool( "override.allow_augmentations", allow_augmentations ) );
   add_option( opt_bool( "override.bloodlust", overrides.bloodlust ) );
   // Regen
   add_option( opt_timespan( "regen_periodicity", regen_periodicity ) );
   // RNG
   add_option( opt_string( "rng", rng_str ) );
   add_option( opt_bool( "deterministic", deterministic ) );
+  add_option( opt_bool( "strict_work_queue", strict_work_queue ) );
   add_option( opt_float( "report_iteration_data", report_iteration_data ) );
   add_option( opt_int( "min_report_iteration_data", min_report_iteration_data ) );
   add_option( opt_bool( "average_range", average_range ) );
@@ -3068,6 +3171,7 @@ void sim_t::create_options()
   add_option( opt_float( "tmi_window_global", tmi_window_global ) );
   add_option( opt_float( "tmi_bin_size", tmi_bin_size ) );
   add_option( opt_bool( "enable_taunts", enable_taunts ) );
+  add_option( opt_bool( "use_item_verification", use_item_verification ) );
   // Character Creation
   add_option( opt_func( "deathknight", parse_player ) );
   add_option( opt_func( "demonhunter", parse_player ) );
@@ -3103,6 +3207,7 @@ void sim_t::create_options()
   add_option( opt_string( "save_suffix", save_suffix_str ) );
   add_option( opt_bool( "save_talent_str", save_talent_str ) );
   add_option( opt_func( "talent_format", parse_talent_format ) );
+  add_option( opt_int( "armory_retries", armory_retries ) );
   // Stat Enchants
   add_option( opt_float( "default_enchant_strength", enchant.attribute[ATTR_STRENGTH] ) );
   add_option( opt_float( "default_enchant_agility", enchant.attribute[ATTR_AGILITY] ) );
@@ -3135,19 +3240,43 @@ void sim_t::create_options()
   add_option( opt_bool( "monitor_cpu", event_mgr.monitor_cpu ) );
   add_option( opt_func( "maximize_reporting", parse_maximize_reporting ) );
   add_option( opt_string( "apikey", apikey ) );
-  add_option( opt_bool( "ilevel_raid_report", ilevel_raid_report ) );
   add_option( opt_bool( "distance_targeting_enabled", distance_targeting_enabled ) );
   add_option( opt_bool( "enable_dps_healing", enable_dps_healing ) );
   add_option( opt_float( "scaling_normalized", scaling_normalized ) );
   add_option( opt_int( "global_item_upgrade_level", global_item_upgrade_level ) );
   add_option( opt_int( "decorated_tooltips", decorated_tooltips ) );
   // Charts
-  add_option( opt_bool( "chart_show_relative_difference", output_relative_difference ) );
-  add_option( opt_float( "chart_boxplot_percentile", boxplot_percentile ) );
+  add_option( opt_bool( "chart_show_relative_difference", chart_show_relative_difference ) );
+  add_option( opt_float( "chart_boxplot_percentile", chart_boxplot_percentile ) );
   // Hotfix
   add_option( opt_bool( "show_hotfixes", display_hotfixes ) );
   // Bonus ids
   add_option( opt_bool( "show_bonus_ids", display_bonus_ids ) );
+
+  // Expansion-specific options
+
+  // Legion
+  add_option( opt_int( "legion.infernal_cinders_users", expansion_opts.infernal_cinders_users, 1, 20 ) );
+  add_option( opt_int( "legion.engine_of_eradication_orbs", expansion_opts.engine_of_eradication_orbs, 0, 4 ) );
+  add_option( opt_func( "legion.cradle_of_anguish_resets", []( sim_t* sim, const std::string&, const std::string& value ) {
+    auto split = util::string_split( value, ":/," );
+    range::for_each( split, [ sim ]( const std::string& str ) {
+      auto v = std::atof( str.c_str() );
+      if ( v <= 0.0 )
+      {
+        return;
+      }
+
+      auto it = range::find( sim -> expansion_opts.cradle_of_anguish_resets, v );
+      if ( it != sim -> expansion_opts.cradle_of_anguish_resets.end() )
+      {
+        return;
+      }
+
+      sim -> expansion_opts.cradle_of_anguish_resets.push_back( v );
+    } );
+    return true;
+  } ) );
 }
 
 // sim_t::parse_option ======================================================
@@ -3302,6 +3431,10 @@ void sim_t::setup( sim_control_t* c )
     work_queue -> batches( player_no_pet_list.size() );
   }
   work_queue -> init( iterations );
+  if ( thread_index == 0 )
+  {
+    work_per_thread.resize( threads );
+  }
 
   if( deterministic && ( target_error != 0 ) )
   {
@@ -3311,27 +3444,39 @@ void sim_t::setup( sim_control_t* c )
 
 // sim_t::progress ==========================================================
 
-sim_t::sim_progress_t sim_t::progress( std::string* detailed, int index )
+sim_progress_t sim_t::progress( std::string* detailed, int index )
 {
-  auto progress = work_queue -> progress( index );
+  auto total_progress = work_queue -> progress( index );
 
-  if ( deterministic )
+  // If strict work queue is used with target error, estimate that total iterations will be roughly
+  // the total iterations of the main thread, multiplied by the total number of threads.
+  if ( target_error > 0 && strict_work_queue )
+  {
+    total_progress.total_iterations *= threads;
+  }
+
+  // For work queues that are independent, collect all work done so far for the progressbar.
+  if ( deterministic || strict_work_queue )
   {
     AUTO_LOCK( relatives_mutex );
     for ( const auto& child : children )
     {
       if ( child )
       {
-        auto progress = child -> work_queue -> progress();
-        progress.current_iterations += progress.current_iterations;
-        progress.total_iterations += progress.total_iterations;
+        auto progress = child -> work_queue -> progress( index );
+        total_progress.current_iterations += progress.current_iterations;
+        // If no target error, include total iterations from the child threads as well
+        if ( target_error <= 0 )
+        {
+          total_progress.total_iterations += progress.total_iterations;
+        }
       }
     }
   }
 
-  detailed_progress( detailed, progress.current_iterations, progress.total_iterations );
+  detailed_progress( detailed, total_progress.current_iterations, total_progress.total_iterations );
 
-  return progress;
+  return total_progress;
 }
 
 double sim_t::progress( std::string& phase, std::string* detailed, int index )
@@ -3612,4 +3757,51 @@ void sim_t::disable_debug_seed()
     log = 0;
     static_cast<io::ofstream*>(out_std.get_stream()) -> close();
   }
+}
+
+// Activates the relevant actors in the simulator just before simulating, based on the relevant
+// simulation mode (single vs multi actor).
+void sim_t::activate_actors()
+{
+  // Clear out all callbacks
+  target_list.reset_callbacks();
+  target_non_sleeping_list.reset_callbacks();
+  player_list.reset_callbacks();
+  player_no_pet_list.reset_callbacks();
+  player_non_sleeping_list.reset_callbacks();
+  healing_no_pet_list.reset_callbacks();
+  healing_pet_list.reset_callbacks();
+
+  // Normal sim mode activates all actors .. and this method is only called once at the beginning of
+  // the simulation run.
+  if ( ! single_actor_batch )
+  {
+    range::for_each( player_list, []( player_t* p ) { p -> activate(); } );
+  }
+  // Single-actor batch mode activates the current active actor
+  else
+  {
+    range::for_each( target_list, []( player_t* t ) { t -> actor_changed(); } );
+
+    // Deactivate old actor
+    if ( current_index > 0 )
+    {
+      player_no_pet_list[ current_index - 1 ] -> deactivate();
+    }
+
+    // Activate new actor
+    player_no_pet_list[ current_index ] -> activate();
+    update_sim_phase_str();
+  }
+
+  current_iteration = -1;
+}
+
+bool sim_t::has_raid_event( const std::string& name ) const
+{
+  auto it = range::find_if( raid_events, [ &name ]( const std::unique_ptr<raid_event_t>& event ) {
+      return util::str_compare_ci( name, event -> name() );
+  } );
+
+  return it != raid_events.end();
 }
